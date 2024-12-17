@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<batchjobs version="2.1.3" save_project="true">
+  <job name="ExportOrthomosaic" target="all">
+    <image_compression>
+      <tiff_big>true</tiff_big>
+      <tiff_tiled>true</tiff_tiled>
+      <tiff_overviews>true</tiff_overviews>
+      <tiff_compression>32946</tiff_compression>
+      <jpeg_quality>90</jpeg_quality>
+    </image_compression>
+    <image_format>2</image_format>
+    <path>conrad/{chunklabel}/{chunklabel}_rgb.tif</path>
+  </job>
+  <job name="BuildPointCloud" target="all">
+    <downscale>2</downscale>
+    <filter_mode>3</filter_mode>
+    <replace_asset>true</replace_asset>
+    <reuse_depth>true</reuse_depth>
+  </job>
+  <job name="BuildDem" target="all">
+    <downscale>2</downscale>
+    <filter_mode>3</filter_mode>
+    <replace_asset>true</replace_asset>
+    <reuse_depth>true</reuse_depth>
+  </job>
+  <job name="ExportReport" target="all">
+    <path>conrad/{chunklabel}/{chunklabel}_report.pdf</path>
+    <title>{chunklabel}</title>
+  </job>
+  <job name="ExportPointCloud" target="all">
+    <crs/>
+    <format>20</format>
+    <path>conrad/{chunklabel}/{chunklabel}_pg.copc.laz</path>
+  </job>
+  <job name="ExportDem" target="all">
+    <image_compression>
+      <tiff_big>true</tiff_big>
+      <tiff_tiled>true</tiff_tiled>
+      <tiff_overviews>true</tiff_overviews>
+      <tiff_compression>5</tiff_compression>
+      <jpeg_quality>90</jpeg_quality>
+    </image_compression>
+    <image_format>2</image_format>
+    <path>conrad/{chunklabel}/{chunklabel}_dsm.tif</path>
+    <save_alpha>false</save_alpha>
+    <source_data>4</source_data>
+  </job>
+</batchjobs>
