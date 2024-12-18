@@ -28,7 +28,7 @@ for (file in rinex_files) {
 }
 
 # 7. Write the merged content to a new .24O file
-output_file <- file.path(folder_path, "merged_files.24O")  # Output file path
+output_file <- file.path(folder_path, "merged_obs_files.24O")  # Output file path
 writeLines(merged_content, output_file)
 
 # Confirmation message
