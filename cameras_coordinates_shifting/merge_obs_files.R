@@ -1,8 +1,8 @@
 # 1. Define the folder containing the .24O files
 folder_path <- "path/to/folder" # Replace with the actual folder path
 
-# 2. List all .24O files in the folder
-rinex_files <- list.files(path = folder_path, pattern = "\\.24O$", full.names = TRUE)
+# 2. List all .24O files in the folder and subfolders
+rinex_files <- list.files(path = folder_path, pattern = "\\.24O$", full.names = TRUE, recursive = TRUE)
 
 # 3. Read the content of the first file and extract its header
 first_file_content <- readLines(rinex_files[1])  # Read the first file
