@@ -48,7 +48,9 @@ MS_cameras_coordinates_shifting <- function(file_path,
   points_projected_shifted <- st_as_sf(
     data.frame(
       Label = points_projected$Label,
-      Z_shifted = points_projected$Z + (new_base_position[3] - old_base_position[3]),
+      X_shifted = shifted_coords[, "X"],
+      Y_shifted = shifted_coords[, "Y"],
+      Z_shifted = points_projected$Z + (new_base_position[3] - old_base_position[3])
     ),
     coords = c("X_shifted", "Y_shifted"),
     crs = projected_crs
