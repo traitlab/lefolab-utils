@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<batchjobs version="2.2">
+  <job name="AlignPhotos" target="all">
+    <filter_stationary_points>false</filter_stationary_points>
+    <keypoint_limit>60000</keypoint_limit>
+    <mask_tiepoints>false</mask_tiepoints>
+    <tiepoint_limit>0</tiepoint_limit>
+  </job>
+  <job name="BuildPointCloud" target="all">
+    <filter_mode>2</filter_mode>
+    <replace_asset>true</replace_asset>
+    <reuse_depth>true</reuse_depth>
+  </job>
+  <job name="BuildDem" target="all">
+    <filter_mode>2</filter_mode>
+    <replace_asset>true</replace_asset>
+    <reuse_depth>true</reuse_depth>
+  </job>
+  <job name="BuildOrthomosaic" target="all">
+    <replace_asset>true</replace_asset>
+    <surface_data>4</surface_data>
+  </job>
+</batchjobs>
