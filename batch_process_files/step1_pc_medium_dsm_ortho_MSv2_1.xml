@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<batchjobs version="2.1.3">
+<batchjobs version="2.1.3" save_project="true">
   <job name="AlignPhotos" target="all">
     <filter_stationary_points>false</filter_stationary_points>
     <keypoint_limit>60000</keypoint_limit>
