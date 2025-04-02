@@ -1,11 +1,28 @@
-# metashape_scripts
-scripts and other files used for Metashape software
+<img src="figs/LEFO.jpg" alt="logo"
+	width="250" />
 
-## How to use batch process files
-1. In Metashape, after loading your pictures, changing the name of the chunks and loading the camera calibration file if applicable, go to Workflow > Batch Process... to open the menu.
-2. Click on the Load icon in the bottom right corner and load 'step1_pc_medium_dsm_ortho.xml' file.
-3. You need to confirm the projection for the jobs 'Build DEM' and 'Build Orthomosaic'.
-4. Check the 'Save project after each step' option and run the batch by clicking on Ok.
-5. When it's over, click on the Load icon in the bottom right corner and load 'step2_pc_high_dsm_report_export.xml' file.
-6. Again, you need to confirm the projection for the jobs 'Export Orthomosaic', 'Build DEM', 'Export Point Cloud' and 'Export DEM'. You also need to confirm the output path for all export jobs.
-7. Run the batch by clicking on Ok.
+# LEFO Standalone Scripts 
+
+## What is this?
+Standalone scripts, or tools, mostly using R, Python or Bash, that members of the [Plant Functional Ecology Laboratory (LEFO)](https://lefo.ca) put together. The tools cover various data processing and analysis tasks that we commonly do using different softwares or platforms.
+
+## Softwares or platforms
+
+* **DJI**: related to DJI products such as D-RTK 2 base station logs
+* **Metashape**: related to Agisoft Metashape
+
+## How to find the scripts
+First go to the folder corresponding to the software or platform of interest. Every single tool, or standalone script, should be in a separate file with a short name that should allow you to find it. A README file should be available in each folder to explain the different files.
+
+> Clone the repo on your computer to run a script. A list of required libraries is available inside each script, usually in the header.
+
+## How to contribute
+
+1. Clone the repo
+2. Always pull before you start
+3. Create a file / folder for your script at the right place
+4. Preferably, the script should be in R (.R), Python (.py) or Bash (.sh)
+5. Add any files / folders too large for Github to the `.gitignore` file
+6. Modify the README inside the folder to explain the new script briefly
+7. Commit the changes
+8. Push to GitHub
