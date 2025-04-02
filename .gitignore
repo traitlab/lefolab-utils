@@ -50,3 +50,4 @@ rsconnect/
 
 # Temporary folders
 temp*/
+*.code-workspace
