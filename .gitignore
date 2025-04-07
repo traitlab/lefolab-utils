@@ -54,6 +54,7 @@ temp*/
 
 # Workspace files
 *.code-workspace
+/.vscode
 
 # Virtual environment folders
 **/.venv/
