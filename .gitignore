@@ -20,6 +20,7 @@
 
 # RStudio files
 .Rproj.user/
+*.Rproj
 
 # produced vignettes
 vignettes/*.html
@@ -50,4 +51,9 @@ rsconnect/
 
 # Temporary folders
 temp*/
+
+# Workspace files
 *.code-workspace
+
+# Virtual environment folders
+**/.venv/
