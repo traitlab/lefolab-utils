@@ -58,3 +58,6 @@ temp*/
 
 # Virtual environment folders
 **/.venv/
+
+# Environment variables
+.env
