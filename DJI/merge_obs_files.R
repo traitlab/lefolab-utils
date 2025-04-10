@@ -1,5 +1,6 @@
 # 1. Define the folder containing the obs files
 folder_path <- "path/to/folder" # Replace with the actual folder path
+survey_marker <- "" # Replace with the actual survey marker name or keep empty for default output name : "merged_obs_files"
 
 # 2. Define the year and extract the last two digits
 year <- 2025
@@ -27,12 +28,23 @@ merged_content <- header  # Start with the modified header
 for (file in rinex_files) {
   file_content <- readLines(file)  # Read the file
   header_end <- which(grepl("END OF HEADER", file_content))  # Locate the end of the header
-  data <- file_content[-(1:header_end)]  # Remove the header lines
-  merged_content <- c(merged_content, data)  # Append the non-header content
+  data_lines <- file_content[-(1:header_end)]  # Remove the header lines
+  
+  epoch_start <- grep(paste0("^>\\s*", year), data_lines)[1]
+  if (!is.na(epoch_start)) {
+    data <- data_lines[epoch_start:length(data_lines)]  # Keep from first epoch line onward
+    merged_content <- c(merged_content, data) # Append the non-header content
+  } else {
+    warning(paste("No valid epoch line found in", file))
+  }
 }
 
 # 8. Write the merged content to a new obs file of the corresponding year
-output_file <- file.path(folder_path, paste0("merged_obs_files.", year_suffix, "O"))  # Output file path
+if (is.null(survey_marker) || survey_marker == "") {
+  survey_marker <- "merged_obs_files"
+}
+
+output_file <- file.path(folder_path, paste0(survey_marker, ".", year_suffix, "O"))  # Output file path
 writeLines(merged_content, output_file)
 
 # Confirmation message
