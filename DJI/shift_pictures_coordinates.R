@@ -1,4 +1,4 @@
-closeup_pictures_coordinates_shifting <- function(input_folder,
+shift_pictures_coordinates <- function(input_folder,
                           old_base_position,  # Vector c(lat, lon, ellips height) of old base position 
                           new_base_position,  # Vector c(lat, lon, ellips height) of new base position  
                           input_crs = 4326,   # Input CRS, default to EPSG 4326 for WGS84
@@ -131,14 +131,14 @@ closeup_pictures_coordinates_shifting <- function(input_folder,
 # new_base_position <- c(lat = 0.00000000, lon = 0.00000000, height = 0.000)
 # 
 # # Call the function
-# closeup_pictures_coordinates_shifting(input_folder,
+# shift_pictures_coordinates(input_folder,
 #                                       old_base_position,
 #                                       new_base_position,
 #                                       input_crs = 4326,      # WGS84
 #                                       projected_crs = 32XXX, # UTM
 #                                       withzoom = TRUE)       # for close-up pictures
 
-# # Batch process
+# # Batch process --------------------
 # # Define a list of input folders
 # input_folders <- c(
 #   "/path/to/input/folder1",
@@ -150,7 +150,7 @@ closeup_pictures_coordinates_shifting <- function(input_folder,
 # for (folder in input_folders) {
 #   message(paste("Processing folder:", folder))
 #   tryCatch({
-#     closeup_pictures_coordinates_shifting(
+#     shift_pictures_coordinates(
 #       input_folder = folder,
 #       old_base_position = old_base_position,
 #       new_base_position = new_base_position,
