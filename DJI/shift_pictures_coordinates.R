@@ -3,7 +3,7 @@ shift_pictures_coordinates <- function(input_folder,
                           new_base_position,  # Vector c(lat, lon, ellips height) of new base position  
                           input_crs = 4326,   # Input CRS, default to EPSG 4326 for WGS84
                           projected_crs,      # Projected CRS
-                          withzoom            # TRUE for wide+zoom pictures pair, FALSE for standalone (mapping pictures for instance)
+                          withzoom            # TRUE for wide+zoom pictures pair, FALSE for standalone pictures (mapping pictures for instance)
                           ) {
   
   require(exiftoolr) # need to install Strawberry Perl to use this package on Windows - https://strawberryperl.com/
