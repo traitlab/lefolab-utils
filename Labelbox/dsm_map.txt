@@ -1,0 +1,64 @@
+import numpy as np
+import numpy.ma as ma
+import folium
+import rioxarray
+import matplotlib.pyplot as plt
+from matplotlib import colormaps
+
+infile = "/data/acarong/labelbox/2025_tiputini_labelbox/dtm_32718ellips.tif"
+da_dem = rioxarray.open_rasterio(infile).rename({'x':'longitude', 'y':'latitude'})
+arr_dem = da_dem.values
+
+clat = da_dem.latitude.values.mean()
+clon = da_dem.longitude.values.mean()
+
+mlat = da_dem.latitude.values.min()
+mlon = da_dem.longitude.values.min()
+
+xlat = da_dem.latitude.values.max()
+xlon = da_dem.longitude.values.max()
+
+print(clat, clon, mlat, mlon, xlat, xlon)
+
+from pyproj import Transformer
+
+# Transformer from EPSG:32718 (UTM zone 18S) to EPSG:4326 (WGS84)
+transformer = Transformer.from_crs("EPSG:32718", "EPSG:4326", always_xy=True)
+
+# Convert map center
+clon, clat = transformer.transform(clon, clat)
+
+# Convert bounds
+mlon, mlat = transformer.transform(mlon, mlat)
+xlon, xlat = transformer.transform(xlon, xlat)
+
+# Now you can safely use these with Folium
+bounds = [[mlat, mlon], [xlat, xlon]]
+
+def colorize(array, cmap='terrain'):
+    normed_data = (array - array.min()) / (array.max() - array.min())    
+    cm = colormaps.get_cmap(cmap)
+    return cm(normed_data)  
+
+data         = ma.masked_invalid(arr_dem)
+colored_data = colorize(data, cmap='terrain')
+
+m = folium.Map(
+    location=[clat, clon],
+    zoom_start=18,
+    max_zoom=20,
+    tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attr="Esri"
+)
+
+arr_dem = da_dem.values[0]  # Shape: (H, W)
+
+data = ma.masked_invalid(arr_dem)
+colored_data = colorize(data, cmap='viridis_r')  # Shape: (H, W, 4)
+
+folium.raster_layers.ImageOverlay(colored_data,
+                                  [[mlat, mlon], [xlat, xlon]],
+                                  opacity=0.7).add_to(m)
+
+html_file = "/data/acarong/labelbox/2025_tiputini_labelbox_DSMtest/quick.html"
+m.save(html_file)

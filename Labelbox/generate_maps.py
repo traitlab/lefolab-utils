@@ -1,15 +1,20 @@
 import argparse
 import exifread
 import folium
+import matplotlib.pyplot as plt
+import numpy as np
+import numpy.ma as ma
 import os
 import rasterio
 import re
 import requests
+import rioxarray
 import xml.etree.ElementTree as ET
 
 from dotenv import load_dotenv
 from folium import IFrame
 from io import BytesIO
+from matplotlib import colormaps
 from pyproj import Transformer
 from rasterio.transform import rowcol
 
@@ -299,6 +304,54 @@ def create_map(lat, lon, png_imagery_url, bbox, output_path, dsm_path=None, dtm_
         opacity=1,
         interactive=False,
     ).add_to(m)
+
+    # Add the DTM overlay with terrain symbology
+    if dtm_path:
+        try:
+            dem = rioxarray.open_rasterio(dtm_path)
+            if 'x' in dem.dims and 'y' in dem.dims:
+                dem = dem.rename({'x': 'longitude', 'y': 'latitude'})
+            else:
+                raise ValueError(f"Unexpected dimension names in DTM file: {dem.dims}")
+            arr_dem = dem.values
+
+            clat = dem.latitude.values.mean()
+            clon = dem.longitude.values.mean()
+
+            mlat = dem.latitude.values.min()
+            mlon = dem.longitude.values.min()
+
+            xlat = dem.latitude.values.max()
+            xlon = dem.longitude.values.max()
+
+            with rasterio.open(dtm_path) as dtm:
+                # Get CRS from the DSM
+                dtm_crs = dtm.crs
+
+            transformer = Transformer.from_crs(dtm_crs, "EPSG:4326", always_xy=True)
+
+            clon, clat = transformer.transform(clon, clat)
+            mlon, mlat = transformer.transform(mlon, mlat)
+            xlon, xlat = transformer.transform(xlon, xlat)
+
+            bounds = [[mlat, mlon], [xlat, xlon]]
+
+            def colorize(array, cmap='terrain'):
+                normed_data = (array - array.min()) / (array.max() - array.min())    
+                cm = colormaps.get_cmap(cmap)
+                return cm(normed_data)  
+
+            if dem.rio.nodata is not None:
+                masked = np.ma.masked_equal(arr_dem[0], dem.rio.nodata)
+            else:
+                raise ValueError("NoData value is not defined in the raster file.")
+            colored_data = colorize(masked, cmap='terrain')
+
+            folium.raster_layers.ImageOverlay(colored_data,
+                                              [[mlat, mlon], [xlat, xlon]],
+                                              opacity=0.7).add_to(m)
+        except Exception as e:
+            print(f"Failed to add DTM overlay: {str(e)}")
     
     # Save the map as an HTML file
     m.save(output_path)
