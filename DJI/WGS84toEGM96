@@ -1,0 +1,30 @@
+from pyproj.crs import CompoundCRS
+cmpd_crs = CompoundCRS(name="WGS 84 + EGM96 height", components=["EPSG:4326", "EPSG:5773"])
+cmpd_crs
+
+lon = -74.0054965099865
+lat = 45.9894202250383
+ellips_height = 366.566619873047
+
+trans = pyproj.Transformer.from_crs("EPSG:4979", cmpd_crs, always_xy=True)
+lon_out, lat_out, egm96_height = trans.transform(lon, lat, ellips_height)
+
+print(egm96_height)
+
+
+## Download the EGM96 geoid model file using curl
+import pyproj
+import subprocess
+
+# Get the pyproj data directory
+proj_download_dir = pyproj.datadir.get_data_dir()
+
+# Run curl
+subprocess.run([
+    "curl",
+    "-O",  # Save with original filename
+    "--remote-name-all",
+    "--create-dirs",
+    "--output-dir", proj_download_dir,
+    "https://cdn.proj.org/us_nga_egm96_15.tif"  # You need to list files explicitly
+], check=True)
