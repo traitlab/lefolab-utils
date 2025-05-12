@@ -23,7 +23,8 @@ shift_pictures_coordinates <- function(input_folder,
   }
 
   # Create a log file in the output folder
-  log_file <- file.path(output_folder, "processing_log.txt")
+  folder_name <- basename(normalizePath(input_folder))
+  log_file <- file.path(output_folder, paste0(folder_name, "_PPKshift.txt"))
   sink(log_file, append = TRUE, split = TRUE)
 
   # Log input parameters
@@ -59,15 +60,19 @@ shift_pictures_coordinates <- function(input_folder,
   xy_difference <- new_base_projected - old_base_projected
   
   # Initialize progress bar
+  sink(NULL)
   total_files <- length(wide_files)
   pb <- txtProgressBar(min = 0, max = total_files, style = 3)
+  sink(log_file, append = TRUE, split = TRUE)
 
   # Process each image
   for (i in seq_along(wide_files)) {
     wide_file <- wide_files[i]
     
     # Update progress bar
+    sink(NULL)
     setTxtProgressBar(pb, i)
+    sink(log_file, append = TRUE, split = TRUE)
   
     pair_files <- wide_file  # Default to single file
     
@@ -200,7 +205,6 @@ shift_pictures_coordinates <- function(input_folder,
 # 
 # # Loop through each folder and process
 # for (folder in input_folders) {
-#   message(paste("Processing folder:", folder))
 #   tryCatch({
 #     shift_pictures_coordinates(
 #       input_folder = folder,
