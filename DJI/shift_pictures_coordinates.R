@@ -20,6 +20,19 @@ shift_pictures_coordinates <- function(input_folder,
   dir.create(output_folder)
   }
 
+  # Create a log file in the output folder
+  log_file <- file.path(output_folder, "processing_log.txt")
+  sink(log_file, append = TRUE, split = TRUE)
+
+  # Log input parameters
+  cat("Processing started\n")
+  cat("Input folder: ", input_folder, "\n")
+  cat("Old base position: ", paste(old_base_position, collapse = ", "), "\n")
+  cat("New base position: ", paste(new_base_position, collapse = ", "), "\n")
+  cat("Input CRS: ", input_crs, "\n")
+  cat("Projected CRS: ", projected_crs, "\n")
+  cat("With zoom: ", withzoom, "\n")
+
   # List all image files in the input folder
   image_files <- list.files(input_folder, pattern = "\\.(jpg|jpeg|JPG|JPEG)$", full.names = TRUE)
 
@@ -136,13 +149,19 @@ shift_pictures_coordinates <- function(input_folder,
         path = output_files
       )
       success_count <- success_count + 1
+      cat(sprintf("Successfully updated EXIF metadata for: %s | Before: (%.8f, %.8f, %.3f) | After: (%.8f, %.8f, %.3f)\n", 
+                  paste(basename(output_files), collapse = ", "),
+                  gps_coords[1], gps_coords[2], gps_altitude,
+                  shifted_point[1], shifted_point[2], shifted_gps_altitude), 
+          file = log_file, append = TRUE)
     }, error = function(e) {
       warning(paste("Failed to update EXIF metadata for", paste(basename(output_files), collapse = ", "), ":", e$message))
       error_count <- error_count + 1
     })
   }
   
-  message(sprintf("Processing complete: %d successful, %d failed", success_count, error_count))
+  cat(sprintf("Processing complete: %d successful, %d failed", success_count, error_count))
+  sink()
   return(paste("Output files in:", output_folder))
 }
 
