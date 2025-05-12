@@ -9,6 +9,8 @@ shift_pictures_coordinates <- function(input_folder,
   require(exiftoolr) # need to install Strawberry Perl to use this package on Windows - https://strawberryperl.com/
   require(sf)
   require(tidyverse)
+  
+  exif_version()
 
   # Initialize counters
   success_count <- 0
@@ -56,8 +58,16 @@ shift_pictures_coordinates <- function(input_folder,
   # Calculate the XY difference in the projected CRS
   xy_difference <- new_base_projected - old_base_projected
   
+  # Initialize progress bar
+  total_files <- length(wide_files)
+  pb <- txtProgressBar(min = 0, max = total_files, style = 3)
+
   # Process each image
-  for (wide_file in wide_files) {
+  for (i in seq_along(wide_files)) {
+    wide_file <- wide_files[i]
+    
+    # Update progress bar
+    setTxtProgressBar(pb, i)
   
     pair_files <- wide_file  # Default to single file
     
@@ -160,6 +170,7 @@ shift_pictures_coordinates <- function(input_folder,
     })
   }
   
+  close(pb)
   cat(sprintf("Processing complete: %d successful, %d failed", success_count, error_count))
   sink()
   return(paste("Output files in:", output_folder))
