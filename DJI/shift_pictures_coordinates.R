@@ -176,7 +176,7 @@ shift_pictures_coordinates <- function(input_folder,
   }
   
   close(pb)
-  cat(sprintf("Processing complete: %d successful, %d failed", success_count, error_count))
+  cat(sprintf("Processing complete: %d successful, %d failed\n", success_count, error_count))
   sink()
   return(paste("Output files in:", output_folder))
 }
@@ -200,7 +200,7 @@ shift_pictures_coordinates <- function(input_folder,
 # input_folders <- c(
 #   "/path/to/input/folder1",
 #   "/path/to/input/folder2",
-#   "/path/to/input/folder3",
+#   "/path/to/input/folder3"
 # )
 # 
 # # Loop through each folder and process
