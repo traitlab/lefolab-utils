@@ -73,14 +73,29 @@ shift_pictures_coordinates <- function(input_folder,
     
     # Check if GPS data exists
     if (is.na(exif_data$GPSLongitude) || is.na(exif_data$GPSLatitude)) {
-      warning(paste("Skipping", basename(wide_file), "- no GPS data found."))
+      warning(paste("Skipping", basename(wide_file), "- no GPS XY data found."))
       error_count <- error_count + 1
       next
     }
     
     # Extract GPS coordinates
     gps_coords <- c(exif_data$GPSLongitude, exif_data$GPSLatitude)
-    gps_altitude <- ifelse(is.na(exif_data$GPSAltitude), 0, exif_data$GPSAltitude)
+    
+    # Check if altitude data exists
+    if (is.na(exif_data$GPSAltitude) || is.na(exif_data$AbsoluteAltitude)) {
+      warning(paste("Skipping", basename(wide_file), "- no GPS altitude data found."))
+      error_count <- error_count + 1
+      next
+    }
+    
+    # Extract altitude and convert AbsoluteAltitude to numeric if needed
+    gps_altitude <- exif_data$GPSAltitude
+    
+    if (is.numeric(exif_data$AbsoluteAltitude)) {
+      absolute_altitude <- exif_data$AbsoluteAltitude
+    } else {
+      absolute_altitude <- as.numeric(gsub("\\+", "", exif_data$AbsoluteAltitude))
+    }
 
     # Convert GPS coordinates to sf object
     point_sf <- st_sfc(st_point(gps_coords), crs = input_crs)
@@ -92,7 +107,13 @@ shift_pictures_coordinates <- function(input_folder,
     shifted_coords <- point_projected
     shifted_coords[1] <- point_projected[1] + xy_difference[1]
     shifted_coords[2] <- point_projected[2] + xy_difference[2]
-    shifted_altitude <- gps_altitude + (new_base_position["height"] - old_base_position["height"])
+    shifted_gps_altitude <- gps_altitude + (new_base_position["height"] - old_base_position["height"])
+    shifted_absolute_altitude <- absolute_altitude + (new_base_position["height"] - old_base_position["height"])
+    
+    # Format the updated AbsoluteAltitude back to a string with the correct sign if needed
+    if (is.character(exif_data$AbsoluteAltitude)) {
+      shifted_absolute_altitude <- sprintf("+%.3f", shifted_absolute_altitude)
+    }
     
     # Convert back to WGS84
     shifted_point <- st_sfc(st_point(shifted_coords), crs = projected_crs) %>% 
@@ -109,7 +130,8 @@ shift_pictures_coordinates <- function(input_folder,
           "-overwrite_original",
           paste0("-GPSLongitude=", shifted_point[1]),
           paste0("-GPSLatitude=", shifted_point[2]),
-          paste0("-GPSAltitude=", shifted_altitude)
+          paste0("-GPSAltitude=", shifted_gps_altitude),
+          paste0("-AbsoluteAltitude=", shifted_absolute_altitude)
         ),
         path = output_files
       )
