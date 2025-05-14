@@ -5,13 +5,13 @@ conda activate canopyrs
 
 # List of missions_id
 MISSIONS_ID=(
-    "" # Add mission_id
-    "" # Add mission_id
-    # Add more mission_id here
+"" # Add mission_id
+"" # Add mission_id
+# Add more mission_id here
 )
-USER="acarong" # lefoai username
-YEAR="2025" # Year of the missions
-EXT="tif" # Extension of the orthomosaic files
+USER="" # lefoai username
+YEAR="" # Year of the missions
+EXT="" # Extension of the orthomosaic files (tif or cog.tif)
 
 # Loop through each project
 for MISSION_ID in "${MISSIONS_ID[@]}"; do

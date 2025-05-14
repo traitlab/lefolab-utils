@@ -5,9 +5,9 @@ conda activate metashape
 
 # List of images_paths
 IMAGES_PATHS=(
-    "" # Add path
-    "" # Add path
-    # Add more paths here
+"" # Add path
+"" # Add path
+# Add more paths here
 )
 
 # Loop through each project
