@@ -218,3 +218,41 @@ shift_pictures_coordinates <- function(input_folder,
 #     warning(paste("Failed to process folder:", folder, ":", e$message))
 #   })
 # }
+
+# # Cleanup and move files --------------------
+# # Define a list of input folders
+# input_folders <- c(
+#   "/path/to/input/folder1",
+#   "/path/to/input/folder2",
+#   "/path/to/input/folder3"
+# )
+# 
+# for (folder in input_folders) {
+#   # Recursively search for 'afterppk' folders in the current folder and subfolders
+#   afterppk_folders <- list.dirs(folder, recursive = TRUE, full.names = TRUE)
+#   afterppk_folders <- afterppk_folders[basename(afterppk_folders) == "afterppk"]
+#   
+#   for (afterppk_folder in afterppk_folders) {
+#     if (dir.exists(afterppk_folder)) {
+#       # List all files in the 'afterppk' folder
+#       files_to_move <- list.files(afterppk_folder, full.names = TRUE)
+#       
+#       # Get the parent folder of 'afterppk'
+#       parent_folder <- dirname(afterppk_folder)
+#       
+#       # Delete all pictures from the parent folder
+#       pictures_to_delete <- list.files(parent_folder, pattern = "\\.(jpg|jpeg|JPG|JPEG)$", full.names = TRUE)
+#       num_deleted <- length(pictures_to_delete)
+#       invisible(file.remove(pictures_to_delete))
+#       cat(sprintf("Deleted %d pictures from %s\n", num_deleted, parent_folder))
+#       
+#       # Move files from 'afterppk' folder to the parent folder
+#       num_moved <- length(files_to_move)
+#       invisible(file.rename(files_to_move, file.path(parent_folder, basename(files_to_move))))
+#       cat(sprintf("Moved %d files from %s to %s\n", num_moved, afterppk_folder, parent_folder))
+#       
+#       # Delete the empty 'afterppk' folder
+#       unlink(afterppk_folder, recursive = TRUE)
+#     }
+#   }
+# }
