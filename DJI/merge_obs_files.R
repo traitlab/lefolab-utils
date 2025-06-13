@@ -1,3 +1,5 @@
+# Can be used with RINEX versions 2.10 and 3.03
+# possible error with other versions due to line 35
 # 1. Define the folder containing the obs files
 folder_path <- "path/to/folder" # Replace with the actual folder path
 survey_marker <- "" # Replace with the actual survey marker name or keep empty for default output name : "merged_obs_files"
@@ -30,7 +32,7 @@ for (file in rinex_files) {
   header_end <- which(grepl("END OF HEADER", file_content))  # Locate the end of the header
   data_lines <- file_content[-(1:header_end)]  # Remove the header lines
   
-  epoch_start <- grep(paste0("^>\\s*", year), data_lines)[1]
+  epoch_start <- grep("^\\s*>?\\s*\\d{2}(\\d{2})?\\s", data_lines)[1]
   if (!is.na(epoch_start)) {
     data <- data_lines[epoch_start:length(data_lines)]  # Keep from first epoch line onward
     merged_content <- c(merged_content, data) # Append the non-header content
