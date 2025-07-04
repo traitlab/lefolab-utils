@@ -62,4 +62,6 @@ temp*/
 # Environment variables
 .env
 .Renviron
+
+# Data folder not to be shared
 /Labelbox/2025_Manaus/data
