@@ -25,4 +25,6 @@ for MISSION_ID in "${MISSIONS_ID[@]}"; do
         YEAR_TO_USE="$YEAR"
     fi
     python /app/CanopyRS/infer.py -c $CONFIG -i /mnt/nfs/conrad/labolaliberte_data/metashape/$YEAR_TO_USE/$MISSION_ID/${MISSION_ID}_rgb.${EXT} -o /data/$USER/CanopyRS/$YEAR_TO_USE/$MISSION_ID
+    mkdir -p /mnt/nfs/conrad/labolaliberte_upload/_data/features/missions/$YEAR_TO_USE/$MISSION_ID/
+    cp /data/$USER/CanopyRS/$YEAR_TO_USE/$MISSION_ID/4_aggregator/${MISSION_ID}_rgb_gr0p07_infer.gpkg /mnt/nfs/conrad/labolaliberte_upload/_data/features/missions/$YEAR_TO_USE/$MISSION_ID/
 done
