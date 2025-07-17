@@ -26,5 +26,11 @@ for MISSION_ID in "${MISSIONS_ID[@]}"; do
     fi
     python /app/CanopyRS/infer.py -c $CONFIG -i /mnt/nfs/conrad/labolaliberte_data/metashape/$YEAR_TO_USE/$MISSION_ID/${MISSION_ID}_rgb.${EXT} -o /data/$USER/CanopyRS/$YEAR_TO_USE/$MISSION_ID
     mkdir -p /mnt/nfs/conrad/labolaliberte_upload/_data/features/missions/$YEAR_TO_USE/$MISSION_ID/
-    cp /data/$USER/CanopyRS/$YEAR_TO_USE/$MISSION_ID/4_aggregator/${MISSION_ID}_rgb_gr0p07_infer.gpkg /mnt/nfs/conrad/labolaliberte_upload/_data/features/missions/$YEAR_TO_USE/$MISSION_ID/
+    # Dynamically extract the threshold (e.g., gr0p07) from the file name
+    THRESHOLD=$(ls /data/$USER/CanopyRS/$YEAR_TO_USE/$MISSION_ID/4_aggregator/ | grep -oP "${MISSION_ID}_rgb_\Kgr0p[0-9]{2}(?=_infer.gpkg)")
+    if [[ -z "$THRESHOLD" ]]; then
+        echo "Error: Threshold value not found for $MISSION_ID. Cannot copy the file."
+        continue
+    fi
+    cp /data/$USER/CanopyRS/$YEAR_TO_USE/$MISSION_ID/4_aggregator/${MISSION_ID}_rgb_${THRESHOLD}_infer.gpkg /mnt/nfs/conrad/labolaliberte_upload/_data/features/missions/$YEAR_TO_USE/$MISSION_ID/
 done
