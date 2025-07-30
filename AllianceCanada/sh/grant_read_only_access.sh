@@ -8,6 +8,26 @@
 # /bin/bash grant_readonly_access.sh jcarreau sharing jcarreau antocg
 #   will give access (x) and read permission (r) to antocg at /home/jcarreau/projects/def-jcarreau/sharing
 
+# validate : 
+# [vincelf@narval1 def-elalib]$ getfacl /home/jcarreau/projects/def-jcarreau/sharing
+
+# getfacl: Removing leading "/" from absolute path names
+# # file: home/jcarreau/projects/def-jcarreau/sharing
+# # owner: jcarreau
+# # group: def-jcarreau
+# # flags: -s-
+# user::rwx
+# user:vincelf:r-x
+# user:antocg:r-x
+# group::r-x
+# mask::r-x
+# other::---
+# default:user::rwx
+# default:user:antocg:r-x
+# default:group::r-x
+# default:mask::r-x
+# default:other::---
+
 # Exit on any error
 set -e
 
