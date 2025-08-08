@@ -1,3 +1,4 @@
+import argparse
 import exifread
 import geopandas as gpd
 import logging
@@ -6,13 +7,16 @@ import pandas as pd
 import requests
 import re
 import subprocess
-from tqdm import tqdm
+import time
 
 from contextlib import contextmanager, redirect_stderr
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
+from io import StringIO
+from requests.adapters import HTTPAdapter
 from shapely.geometry import Point
-import argparse
+from tqdm import tqdm
+from urllib3.util.retry import Retry
 
 @contextmanager
 def suppress_stderr():
@@ -40,29 +44,62 @@ def convert_to_decimal_degrees(value, ref):
         decimal_degrees = -decimal_degrees
     return decimal_degrees
 
-def get_coordinates_from_image_url(picture_url):
+def setup_session():
+    """Create a requests session with retry strategy"""
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=3,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["HEAD", "GET", "OPTIONS"],
+        backoff_factor=1
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+def safe_request(session, url, timeout=30, max_retries=3):
+    """Make a safe HTTP request with error handling"""
+    logger = logging.getLogger('arbutus2points')
+
+    for attempt in range(max_retries):
+        try:
+            response = session.get(url, timeout=timeout)
+            return response
+        except (requests.exceptions.ConnectionError, 
+                requests.exceptions.Timeout,
+                requests.exceptions.RequestException) as e:
+            logger.error(f"Request failed (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)  # Exponential backoff
+            else:
+                logger.error(f"Failed to fetch {url} after {max_retries} attempts")
+                return None
+
+def get_coordinates_from_image_url(picture_url, session):
     """
     Get latitude and longitude from the image metadata.
     
     Args:
         picture_url (str): URL of the image to process.
+        session: Requests session with retry logic.
         
     Returns:
         tuple or None: (latitude, longitude) in decimal degrees if found, otherwise None.
     """
-    logger = logging.getLogger('arbutus2points_bci')
+    logger = logging.getLogger('arbutus2points')
     
-    response = requests.get(picture_url)
-    
-    if response.status_code == 200:
+    response = safe_request(session, picture_url)
+
+    if response and response.status_code == 200:
         # Load the image into BytesIO
         image_data = BytesIO(response.content)
         
         try:
-            with suppress_stderr():
-                tags = exifread.process_file(image_data)
-        except IndexError as e:
-            logger.warning(f"EXIF parsing error: {e} for image {picture_url}")
+            with redirect_stderr(StringIO()):
+                tags = exifread.process_file(image_data, details=False)
+        except (IndexError, KeyError, ValueError) as e:
+            logger.error(f"Error processing EXIF data: {e} for {picture_url}")
             return None
         
         latitude = tags.get('GPS GPSLatitude')
@@ -72,19 +109,29 @@ def get_coordinates_from_image_url(picture_url):
         
         # Check if EXIF tags are present
         if latitude and latitude_ref and longitude and longitude_ref:
-            # Convert to decimal degrees
-            latitude = convert_to_decimal_degrees(latitude, latitude_ref)
-            longitude = convert_to_decimal_degrees(longitude, longitude_ref)
-            return latitude, longitude
+            try:
+                # Convert to decimal degrees
+                latitude = convert_to_decimal_degrees(latitude, latitude_ref)
+                longitude = convert_to_decimal_degrees(longitude, longitude_ref)
+                return latitude, longitude
+            
+            except (ValueError, AttributeError) as e:
+                logger.error(f"Error converting GPS coordinates: {e}")
+                return None
         else:
             logger.warning("Missing GPS EXIF tags in the image metadata.")
             return None
     else:
-        logger.error(f"Failed to fetch image. HTTP Status Code: {response.status_code}")
+        if response:
+            logger.error(f"Failed to fetch image. HTTP Status Code: {response.status_code}")
         return None
 
 def process_zoom_file(args):
-    logger = logging.getLogger('arbutus2points_bci')
+    logger = logging.getLogger('arbutus2points')
+
+    # Create session with retry logic
+    session = setup_session()
+
     zoom_file, wide_files, folder = args
     zoom_basename = os.path.basename(zoom_file)
     identifier_match = zoom_basename.split("_")[-1].lower().replace("zoom.jpg", "")
@@ -101,7 +148,7 @@ def process_zoom_file(args):
     
     wide_url = f"https://object-arbutus.cloud.computecanada.ca/{folder}/{wide_file}"
     zoom_url = f"https://object-arbutus.cloud.computecanada.ca/{folder}/{zoom_file}"
-    coords = get_coordinates_from_image_url(wide_url)
+    coords = get_coordinates_from_image_url(wide_url, session)
     if coords:
         return {
             'geometry': Point(coords[1], coords[0]),
@@ -112,17 +159,17 @@ def process_zoom_file(args):
         }
     return None
 
-def setup_logging(output_dir):
+def setup_logging(output_dir, project_qualifier):
     """Configure logging to both file and console."""
     # Create logs directory
     log_dir = os.path.join(output_dir)
     os.makedirs(log_dir, exist_ok=True)
     
     # Set up logging configuration
-    log_file = os.path.join(log_dir, 'arbutus2points_bci_parallel.log')
+    log_file = os.path.join(log_dir, f'arbutus2points_{project_qualifier}.log')
     
     # Create a logger
-    logger = logging.getLogger('arbutus2points_bci')
+    logger = logging.getLogger('arbutus2points')
     logger.setLevel(logging.INFO)
     
     # Create handlers
@@ -130,7 +177,7 @@ def setup_logging(output_dir):
     console_handler = logging.StreamHandler()
     
     # Create formatter
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     file_handler.setFormatter(formatter)
     console_handler.setFormatter(formatter)
     
@@ -145,7 +192,7 @@ def main(output_dir, points_layer, config_path, project_qualifier, max_workers=8
     base_url = "https://object-arbutus.cloud.computecanada.ca"
 
     # Set up logger (output directory can be changed as needed)
-    logger = setup_logging(output_dir=output_dir)
+    logger = setup_logging(output_dir=output_dir, project_qualifier=project_qualifier)
     points_layer_path = os.path.join(output_dir, points_layer)
     existing_gdf = None
     existing_missions = set()
@@ -230,16 +277,20 @@ def main(output_dir, points_layer, config_path, project_qualifier, max_workers=8
         logger.info(f"Finished mission '{folder}': {rows_added} points added, {len(wide_files)} wide images, {len(zoom_files)} zoom images.")
 
     # After processing all folders
-    if existing_gdf is not None and not existing_gdf.empty:
-        # Concatenate existing and new rows, avoiding duplicates
-        new_gdf = gpd.GeoDataFrame(rows, crs='EPSG:4326')
-        combined_gdf = pd.concat([existing_gdf, new_gdf], ignore_index=True)
-        # Drop duplicates based on mission_id, point_id, and wide_url
-        combined_gdf = combined_gdf.drop_duplicates(subset=['mission_id', 'point_id', 'wide_url'])
-        combined_gdf.to_file(points_layer_path, driver="GPKG")
+    if rows:
+        if existing_gdf is not None and not existing_gdf.empty:
+            # Concatenate existing and new rows, avoiding duplicates
+            new_gdf = gpd.GeoDataFrame(rows, crs='EPSG:4326')
+            combined_gdf = pd.concat([existing_gdf, new_gdf], ignore_index=True)
+            # Drop duplicates based on mission_id, point_id, and wide_url
+            combined_gdf = combined_gdf.drop_duplicates(subset=['mission_id', 'point_id', 'wide_url'])
+            combined_gdf.to_file(points_layer_path, driver="GPKG")
+        else:
+            gdf = gpd.GeoDataFrame(rows, crs='EPSG:4326')
+            gdf.to_file(points_layer_path, driver="GPKG")
+        logger.info(f"Successfully saved {len(rows)} new points to {points_layer_path}")
     else:
-        gdf = gpd.GeoDataFrame(rows, crs='EPSG:4326')
-        gdf.to_file(points_layer_path, driver="GPKG")
+        logger.info("No new points to add. Points layer unchanged.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process Arbutus BCI image folders in parallel.")
