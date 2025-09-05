@@ -7,6 +7,7 @@ import pandas as pd
 import requests
 import re
 import subprocess
+import sys
 import time
 
 from contextlib import contextmanager, redirect_stderr
@@ -126,7 +127,7 @@ def get_coordinates_from_image_url(picture_url, session):
             logger.error(f"Failed to fetch image. HTTP Status Code: {response.status_code}")
         return None
 
-def process_zoom_file(args):
+def process_zoom_file(args, base_url = "https://object-arbutus.cloud.computecanada.ca"):
     logger = logging.getLogger('arbutus2points')
 
     # Create session with retry logic
@@ -145,9 +146,9 @@ def process_zoom_file(args):
     if not wide_file:
         logger.warning(f"Could not find matching wide photo for {zoom_file} with identifier {identifier_match}")
         return None
-    
-    wide_url = f"https://object-arbutus.cloud.computecanada.ca/{folder}/{wide_file}"
-    zoom_url = f"https://object-arbutus.cloud.computecanada.ca/{folder}/{zoom_file}"
+
+    wide_url = f"{base_url}/{folder}/{wide_file}"
+    zoom_url = f"{base_url}/{folder}/{zoom_file}"
     coords = get_coordinates_from_image_url(wide_url, session)
     if coords:
         return {
@@ -160,31 +161,48 @@ def process_zoom_file(args):
     return None
 
 def setup_logging(output_dir, project_qualifier):
-    """Configure logging to both file and console."""
-    # Create logs directory
+    """Configure logging to file, stdout (INFO), and stderr (WARNING/ERROR)."""
     log_dir = os.path.join(output_dir)
     os.makedirs(log_dir, exist_ok=True)
-    
-    # Set up logging configuration
-    log_file = os.path.join(log_dir, f'arbutus2points_{project_qualifier}.log')
-    
-    # Create a logger
+    info_log_file = os.path.join(log_dir, f'arbutus2points_{project_qualifier}_info.log')
+    error_log_file = os.path.join(log_dir, f'arbutus2points_{project_qualifier}_error.log')
+
     logger = logging.getLogger('arbutus2points')
     logger.setLevel(logging.INFO)
-    
-    # Create handlers
-    file_handler = logging.FileHandler(log_file)
-    console_handler = logging.StreamHandler()
-    
-    # Create formatter
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-    file_handler.setFormatter(formatter)
-    console_handler.setFormatter(formatter)
-    
-    # Add handlers to logger
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
-    
+    logger.handlers = []  # Remove any existing handlers
+
+    # Formatter
+    formatter = logging.Formatter('[%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+
+    # Handler for INFO to stdout
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setLevel(logging.INFO)
+    stdout_handler.addFilter(lambda record: record.levelno == logging.INFO)
+    stdout_handler.setFormatter(formatter)
+
+    # Handler for INFO to info log file
+    info_file_handler = logging.FileHandler(info_log_file, mode='a')
+    info_file_handler.setLevel(logging.INFO)
+    info_file_handler.addFilter(lambda record: record.levelno == logging.INFO)
+    info_file_handler.setFormatter(formatter)
+
+    # Handler for WARNING and ERROR to stderr
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setLevel(logging.WARNING)
+    stderr_handler.setFormatter(formatter)
+
+    # Handler for WARNING and ERROR to error log file
+    error_file_handler = logging.FileHandler(error_log_file, mode='a')
+    error_file_handler.setLevel(logging.WARNING)
+    error_file_handler.setFormatter(formatter)
+
+    # Remove default handlers and add custom ones
+    logger.handlers = []
+    logger.addHandler(stdout_handler)
+    logger.addHandler(info_file_handler)
+    logger.addHandler(stderr_handler)
+    logger.addHandler(error_file_handler)
+
     return logger
 
 def main(output_dir, points_layer, config_path, project_qualifier, max_workers=8):
@@ -255,7 +273,7 @@ def main(output_dir, points_layer, config_path, project_qualifier, max_workers=8
                 zoom_basename = os.path.basename(zoom_file)
                 identifier_match = zoom_basename.split("_")[-1].lower().replace("zoom.jpg", "")
                 wide_file = wide_lookup.get(identifier_match)
-                wide_url = f"https://object-arbutus.cloud.computecanada.ca/{folder}/{wide_file}" if wide_file else None
+                wide_url = f"{base_url}/{folder}/{wide_file}" if wide_file else None
                 if wide_url and (wide_url, identifier_match) not in existing_points:
                     zoom_files_to_add.append(zoom_file)
             if not zoom_files_to_add:
