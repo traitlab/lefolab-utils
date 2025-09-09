@@ -1,0 +1,26 @@
+SRC_ID=75438987-5cf2-11f0-b2e5-02fa2a4031ab
+DST_ID=150c306f-4bcb-414f-9a82-fdd039cde793
+
+# File paths
+SRC_ROOT=/mnt/nfs/conrad/labolaliberte_data/metashape
+DST_PATH=/13/published/publication_974/submitted_data/Dataset/Photogrammetry_Products/
+
+# Globus authentication
+GLOBUS_CLIENT_ID=4b534e07-3cfb-4761-ad1f-ac2c3b0eaf92
+
+# File filtering
+FILE_PATTERN=*chm*.tif
+MISSION_YEAR_LENGTH=4
+
+# Transfer settings
+TRANSFER_LABEL=CHM Upload
+SYNC_LEVEL=checksum
+AUTO_ACTIVATE_ENDPOINTS=true
+
+# Optional settings
+VERBOSE_LOGGING=true
+DRY_RUN=false
+MAX_FILES_PER_BATCH=1000
+CREATE_DEST_DIRS=true
+MAX_RETRIES=3
+RETRY_DELAY=5

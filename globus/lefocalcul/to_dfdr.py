@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 """
 Globus SDK script to transfer CHM files from NFS to DFDR collection
-Uses .env file for configuration
+Uses .env file for configuration and modern Globus CLI authentication
 """
 
 import os
 import glob
 import globus_sdk
-from globus_sdk.tokenstorage import SimpleJSONFileAdapter
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-load_dotenv(".env")
+load_dotenv("/home/lefolab/vscode-workspaces/lefolab-utils/globus/lefocalcul/.env")
 
 # ------------------------
 # CONFIGURATION FROM .ENV
@@ -20,7 +19,7 @@ SRC_ID = os.getenv("SRC_ID", "SOURCE_ENDPOINT_ID")
 DST_ID = os.getenv("DST_ID", "DEST_ENDPOINT_ID")
 DST_PATH = os.getenv("DST_PATH", "/13/published/publication_974/submitted_data/Dataset/Photogrammetry_Products/")
 SRC_ROOT = os.getenv("SRC_ROOT", "/mnt/nfs/conrad/labolaliberte_data/metashape")
-GLOBUS_TOKEN_FILE = os.path.expanduser(os.getenv("GLOBUS_TOKEN_FILE", "~/.globus_cli_tokens.json"))
+GLOBUS_CLIENT_ID = os.getenv("GLOBUS_CLIENT_ID", "cf15eb47-ac2b-442a-9dfa-d9fe4d91cf98")
 FILE_PATTERN = os.getenv("FILE_PATTERN", "*CHM*.tif")
 MISSION_YEAR_LENGTH = int(os.getenv("MISSION_YEAR_LENGTH", "4"))
 TRANSFER_LABEL = os.getenv("TRANSFER_LABEL", "CHM Upload")
@@ -44,26 +43,77 @@ def validate_config():
         raise ValueError("SRC_ID must be set in .env file")
     if DST_ID == "DEST_ENDPOINT_ID":
         raise ValueError("DST_ID must be set in .env file")
-    if not os.path.exists(os.path.expanduser(GLOBUS_TOKEN_FILE)):
-        raise ValueError(f"Globus token file not found: {GLOBUS_TOKEN_FILE}")
 
 # ------------------------
 # AUTHENTICATION
 # ------------------------
 def setup_globus_client():
-    """Set up Globus transfer client with authentication"""
+    """Set up Globus transfer client using OAuth authentication"""
     log("Setting up Globus authentication...")
     
-    # Reuse Globus CLI login tokens
-    storage = SimpleJSONFileAdapter(GLOBUS_TOKEN_FILE)
-    tokens = storage.get_token_data("transfer.api.globus.org")
-    authorizer = globus_sdk.RefreshTokenAuthorizer(
-        tokens["refresh_token"],
-        globus_sdk.NativeAppAuthClient(tokens["client_id"]),
-        access_token=tokens["access_token"],
-        expires_at=tokens["expires_at_seconds"],
-    )
-    return globus_sdk.TransferClient(authorizer=authorizer)
+    # Use your registered app's client ID
+    client = globus_sdk.NativeAppAuthClient(GLOBUS_CLIENT_ID)
+    
+    # Start the OAuth flow with the exact same scopes as the CLI
+    client.oauth2_start_flow(requested_scopes=[
+        "openid",
+        "profile", 
+        "email",
+        "urn:globus:auth:scope:auth.globus.org:view_identity_set",
+        "urn:globus:auth:scope:transfer.api.globus.org:all",
+        "urn:globus:auth:scope:groups.api.globus.org:all",
+        "urn:globus:auth:scope:search.api.globus.org:all"
+    ])
+    
+    authorize_url = client.oauth2_get_authorize_url()
+    print(f"Please go to this URL and authorize the application:")
+    print(f"{authorize_url}")
+    print("\nAfter authorizing, you'll get an authorization code.")
+    print("Copy the code and paste it below.")
+    
+    while True:
+        auth_code = input("Enter the authorization code: ").strip()
+        
+        if not auth_code:
+            print("Please enter a valid authorization code.")
+            continue
+            
+        try:
+            # Exchange the authorization code for tokens
+            log("Exchanging authorization code for tokens...")
+            token_response = client.oauth2_exchange_code_for_tokens(auth_code)
+            
+            # Check if we got the transfer tokens
+            if "transfer.api.globus.org" not in token_response.by_resource_server:
+                print("Error: Transfer API tokens not received. Please try again.")
+                continue
+                
+            tokens = token_response.by_resource_server["transfer.api.globus.org"]
+            
+            # Create the transfer client
+            authorizer = globus_sdk.RefreshTokenAuthorizer(
+                tokens["refresh_token"],
+                client,
+                access_token=tokens["access_token"],
+                expires_at=tokens["expires_at_seconds"],
+            )
+            
+            log("Authentication successful!")
+            return globus_sdk.TransferClient(authorizer=authorizer)
+            
+        except globus_sdk.AuthAPIError as e:
+            print(f"Authentication error: {e}")
+            print("This might be because:")
+            print("1. The authorization code was already used")
+            print("2. The authorization code expired")
+            print("3. There was a network issue")
+            print("\nPlease get a fresh authorization code and try again.")
+            continue
+            
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            print("Please try again with a fresh authorization code.")
+            continue
 
 # ------------------------
 # MAIN TRANSFER LOGIC
