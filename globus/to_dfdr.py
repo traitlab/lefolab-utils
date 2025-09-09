@@ -10,7 +10,7 @@ import globus_sdk
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-load_dotenv("/home/lefolab/vscode-workspaces/lefolab-utils/globus/lefocalcul/.env")
+load_dotenv(".env")
 
 # ------------------------
 # CONFIGURATION FROM .ENV
