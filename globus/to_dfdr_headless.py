@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Globus SDK script to transfer CHM files from NFS to DFDR collection
-Uses .env file for configuration and modern Globus CLI authentication
+Fully headless Globus transfer script using client credentials authentication.
+This script can run completely without any human intervention.
 """
 
 import os
@@ -20,6 +20,7 @@ DST_ID = os.getenv("DST_ID", "DEST_ENDPOINT_ID")
 DST_PATH = os.getenv("DST_PATH", "/13/published/publication_974/submitted_data/Dataset/Photogrammetry_Products/")
 SRC_ROOT = os.getenv("SRC_ROOT", "/mnt/nfs/conrad/labolaliberte_data/metashape")
 GLOBUS_CLIENT_ID = os.getenv("GLOBUS_CLIENT_ID", "cf15eb47-ac2b-442a-9dfa-d9fe4d91cf98")
+GLOBUS_CLIENT_SECRET = os.getenv("GLOBUS_CLIENT_SECRET", "")
 GLOBUS_REFRESH_TOKEN = os.getenv("GLOBUS_REFRESH_TOKEN", "")
 FILE_PATTERN = os.getenv("FILE_PATTERN", "*CHM*.tif")
 MISSION_YEAR_LENGTH = int(os.getenv("MISSION_YEAR_LENGTH", "4"))
@@ -45,20 +46,15 @@ def validate_config():
     if DST_ID == "DEST_ENDPOINT_ID":
         raise ValueError("DST_ID must be set in .env file")
 
-# ------------------------
-# AUTHENTICATION
-# ------------------------
 def setup_globus_client():
-    """Set up Globus transfer client using OAuth authentication"""
+    """Set up Globus transfer client using headless authentication"""
     log("Setting up Globus authentication...")
     
-    # Use your registered app's client ID
-    client = globus_sdk.NativeAppAuthClient(GLOBUS_CLIENT_ID)
-    
-    # Check if we have a refresh token for non-interactive mode
+    # Try refresh token first (most reliable for headless)
     if GLOBUS_REFRESH_TOKEN:
-        log("Using refresh token for non-interactive authentication...")
+        log("Using refresh token for headless authentication...")
         try:
+            client = globus_sdk.NativeAppAuthClient(GLOBUS_CLIENT_ID)
             authorizer = globus_sdk.RefreshTokenAuthorizer(
                 GLOBUS_REFRESH_TOKEN,
                 client
@@ -67,72 +63,36 @@ def setup_globus_client():
             return globus_sdk.TransferClient(authorizer=authorizer)
         except Exception as e:
             log(f"Refresh token authentication failed: {e}")
-            log("Falling back to interactive authentication...")
+            log("Falling back to client credentials...")
     
-    # Interactive OAuth flow
-    log("Starting interactive OAuth flow...")
-    client.oauth2_start_flow(requested_scopes=[
-        "openid",
-        "profile", 
-        "email",
-        "urn:globus:auth:scope:auth.globus.org:view_identity_set",
-        "urn:globus:auth:scope:transfer.api.globus.org:all",
-        "urn:globus:auth:scope:groups.api.globus.org:all",
-        "urn:globus:auth:scope:search.api.globus.org:all"
-    ])
-    
-    authorize_url = client.oauth2_get_authorize_url()
-    print(f"Please go to this URL and authorize the application:")
-    print(f"{authorize_url}")
-    print("\nAfter authorizing, you'll get an authorization code.")
-    print("Copy the code and paste it below.")
-    
-    while True:
-        auth_code = input("Enter the authorization code: ").strip()
-        
-        if not auth_code:
-            print("Please enter a valid authorization code.")
-            continue
-            
+    # Try client credentials (requires confidential app)
+    if GLOBUS_CLIENT_SECRET:
+        log("Using client credentials for headless authentication...")
         try:
-            # Exchange the authorization code for tokens
-            log("Exchanging authorization code for tokens...")
-            token_response = client.oauth2_exchange_code_for_tokens(auth_code)
-            
-            # Check if we got the transfer tokens
-            if "transfer.api.globus.org" not in token_response.by_resource_server:
-                print("Error: Transfer API tokens not received. Please try again.")
-                continue
-                
-            tokens = token_response.by_resource_server["transfer.api.globus.org"]
-            
-            # Create the transfer client
-            authorizer = globus_sdk.RefreshTokenAuthorizer(
-                tokens["refresh_token"],
+            client = globus_sdk.ConfidentialAppAuthClient(GLOBUS_CLIENT_ID, GLOBUS_CLIENT_SECRET)
+            authorizer = globus_sdk.ClientCredentialsAuthorizer(
                 client,
-                access_token=tokens["access_token"],
-                expires_at=tokens["expires_at_seconds"],
+                "urn:globus:auth:scope:transfer.api.globus.org:all"
             )
-            
-            log("Authentication successful!")
-            print(f"\n💡 TIP: To avoid interactive authentication in the future, add this to your .env file:")
-            print(f"GLOBUS_REFRESH_TOKEN={tokens['refresh_token']}")
-            
+            log("Authentication successful using client credentials!")
             return globus_sdk.TransferClient(authorizer=authorizer)
-            
-        except globus_sdk.AuthAPIError as e:
-            print(f"Authentication error: {e}")
-            print("This might be because:")
-            print("1. The authorization code was already used")
-            print("2. The authorization code expired")
-            print("3. There was a network issue")
-            print("\nPlease get a fresh authorization code and try again.")
-            continue
-            
         except Exception as e:
-            print(f"Unexpected error: {e}")
-            print("Please try again with a fresh authorization code.")
-            continue
+            log(f"Client credentials authentication failed: {e}")
+    
+    # If all else fails, provide instructions
+    raise Exception("""
+No valid authentication method found. Please set one of the following in your .env file:
+
+1. GLOBUS_REFRESH_TOKEN=your-refresh-token (recommended)
+   - Get this by running: python get_refresh_token.py
+   - Then add the output to your .env file
+
+2. GLOBUS_CLIENT_SECRET=your-client-secret (for confidential apps)
+   - Register a confidential app in Globus Auth Developer Console
+   - Use the client secret for headless authentication
+
+For more information, see the README.md file.
+""")
 
 # ------------------------
 # MAIN TRANSFER LOGIC

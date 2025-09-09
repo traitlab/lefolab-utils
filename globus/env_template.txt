@@ -7,6 +7,11 @@ DST_PATH=/13/published/publication_974/submitted_data/Dataset/Photogrammetry_Pro
 
 # Globus authentication
 GLOBUS_CLIENT_ID=4b534e07-3cfb-4761-ad1f-ac2c3b0eaf92
+# Optional: Refresh token for non-interactive authentication
+# Get this by running: python get_refresh_token.py
+# GLOBUS_REFRESH_TOKEN=your-refresh-token-here
+# Alternative: Client secret for confidential apps (fully headless)
+# GLOBUS_CLIENT_SECRET=your-client-secret-here
 
 # File filtering
 FILE_PATTERN=*chm*.tif

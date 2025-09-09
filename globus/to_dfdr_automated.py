@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Globus SDK script to transfer CHM files from NFS to DFDR collection
-Uses .env file for configuration and modern Globus CLI authentication
+Fully automated Globus transfer script with device flow authentication.
+This script can run completely headless without any human intervention.
 """
 
 import os
 import glob
 import globus_sdk
+import time
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -45,11 +46,8 @@ def validate_config():
     if DST_ID == "DEST_ENDPOINT_ID":
         raise ValueError("DST_ID must be set in .env file")
 
-# ------------------------
-# AUTHENTICATION
-# ------------------------
 def setup_globus_client():
-    """Set up Globus transfer client using OAuth authentication"""
+    """Set up Globus transfer client using automated authentication"""
     log("Setting up Globus authentication...")
     
     # Use your registered app's client ID
@@ -67,72 +65,64 @@ def setup_globus_client():
             return globus_sdk.TransferClient(authorizer=authorizer)
         except Exception as e:
             log(f"Refresh token authentication failed: {e}")
-            log("Falling back to interactive authentication...")
+            log("Falling back to device flow authentication...")
     
-    # Interactive OAuth flow
-    log("Starting interactive OAuth flow...")
-    client.oauth2_start_flow(requested_scopes=[
-        "openid",
-        "profile", 
-        "email",
-        "urn:globus:auth:scope:auth.globus.org:view_identity_set",
-        "urn:globus:auth:scope:transfer.api.globus.org:all",
-        "urn:globus:auth:scope:groups.api.globus.org:all",
-        "urn:globus:auth:scope:search.api.globus.org:all"
-    ])
-    
-    authorize_url = client.oauth2_get_authorize_url()
-    print(f"Please go to this URL and authorize the application:")
-    print(f"{authorize_url}")
-    print("\nAfter authorizing, you'll get an authorization code.")
-    print("Copy the code and paste it below.")
-    
-    while True:
-        auth_code = input("Enter the authorization code: ").strip()
+    # Device flow for fully automated authentication
+    log("Starting device flow authentication...")
+    try:
+        # Start device flow
+        flow = client.oauth2_device_flow(requested_scopes=[
+            "openid",
+            "profile", 
+            "email",
+            "urn:globus:auth:scope:auth.globus.org:view_identity_set",
+            "urn:globus:auth:scope:transfer.api.globus.org:all",
+            "urn:globus:auth:scope:groups.api.globus.org:all",
+            "urn:globus:auth:scope:search.api.globus.org:all"
+        ])
         
-        if not auth_code:
-            print("Please enter a valid authorization code.")
-            continue
-            
-        try:
-            # Exchange the authorization code for tokens
-            log("Exchanging authorization code for tokens...")
-            token_response = client.oauth2_exchange_code_for_tokens(auth_code)
-            
-            # Check if we got the transfer tokens
-            if "transfer.api.globus.org" not in token_response.by_resource_server:
-                print("Error: Transfer API tokens not received. Please try again.")
-                continue
-                
-            tokens = token_response.by_resource_server["transfer.api.globus.org"]
-            
-            # Create the transfer client
-            authorizer = globus_sdk.RefreshTokenAuthorizer(
-                tokens["refresh_token"],
-                client,
-                access_token=tokens["access_token"],
-                expires_at=tokens["expires_at_seconds"],
-            )
-            
-            log("Authentication successful!")
-            print(f"\n💡 TIP: To avoid interactive authentication in the future, add this to your .env file:")
-            print(f"GLOBUS_REFRESH_TOKEN={tokens['refresh_token']}")
-            
-            return globus_sdk.TransferClient(authorizer=authorizer)
-            
-        except globus_sdk.AuthAPIError as e:
-            print(f"Authentication error: {e}")
-            print("This might be because:")
-            print("1. The authorization code was already used")
-            print("2. The authorization code expired")
-            print("3. There was a network issue")
-            print("\nPlease get a fresh authorization code and try again.")
-            continue
-            
-        except Exception as e:
-            print(f"Unexpected error: {e}")
-            print("Please try again with a fresh authorization code.")
-            continue
+        print(f"Please visit: {flow['verification_uri']}")
+        print(f"And enter code: {flow['user_code']}")
+        print("Waiting for authorization...")
+        
+        # Poll for completion
+        while True:
+            try:
+                token_response = client.oauth2_device_flow_wait(flow)
+                break
+            except globus_sdk.AuthAPIError as e:
+                if e.code == "authorization_pending":
+                    time.sleep(5)  # Wait 5 seconds before trying again
+                    continue
+                else:
+                    raise
+        
+        # Check if we got transfer tokens
+        if "transfer.api.globus.org" not in token_response.by_resource_server:
+            raise Exception("Transfer API tokens not received")
+        
+        tokens = token_response.by_resource_server["transfer.api.globus.org"]
+        
+        # Create the transfer client
+        authorizer = globus_sdk.RefreshTokenAuthorizer(
+            tokens["refresh_token"],
+            client,
+            access_token=tokens["access_token"],
+            expires_at=tokens["expires_at_seconds"],
+        )
+        
+        log("Device flow authentication successful!")
+        
+        # Save refresh token for future use
+        refresh_token = tokens["refresh_token"]
+        print(f"\n💡 TIP: Add this to your .env file for future automated runs:")
+        print(f"GLOBUS_REFRESH_TOKEN={refresh_token}")
+        
+        return globus_sdk.TransferClient(authorizer=authorizer)
+        
+    except Exception as e:
+        log(f"Device flow authentication failed: {e}")
+        raise Exception("Could not authenticate with Globus. Please check your client ID and try again.")
 
 # ------------------------
 # MAIN TRANSFER LOGIC
