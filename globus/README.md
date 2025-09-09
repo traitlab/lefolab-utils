@@ -16,12 +16,12 @@ It's recommended to use a virtual environment to isolate the project dependencie
 
 ```bash
 # Create virtual environment
-python3 -m venv globus-env
+python3 -m venv .venv
 
 # Activate virtual environment
-source globus-env/bin/activate
+source .venv/bin/activate
 
-# Verify activation (you should see (globus-env) in your prompt)
+# Verify activation (you should see (.venv) in your prompt)
 which python
 ```
 
@@ -119,7 +119,7 @@ Edit `.env` and fill in your actual values:
 ### Activate Virtual Environment (if using one):
 ```bash
 # Activate the virtual environment
-source globus-env/bin/activate
+source .venv/bin/activate
 
 # Verify you're in the virtual environment
 which python
@@ -202,7 +202,7 @@ DRY_RUN=false
 ## Troubleshooting
 
 1. **Virtual Environment Issues**:
-   - Make sure the virtual environment is activated: `source globus-env/bin/activate`
+   - Make sure the virtual environment is activated: `source .venv/bin/activate`
    - Verify Python path: `which python` should show the venv path
    - If packages are missing, reinstall: `pip install -r requirements.txt`
 
