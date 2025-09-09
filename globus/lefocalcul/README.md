@@ -10,12 +10,71 @@ This directory contains scripts for transferring CHM files from NFS to DFDR coll
 
 ## Setup
 
-### 1. Install Dependencies
+### 1. Create and Activate Virtual Environment (Recommended)
+
+It's recommended to use a virtual environment to isolate the project dependencies:
+
 ```bash
+# Create virtual environment
+python3 -m venv globus-env
+
+# Activate virtual environment
+source globus-env/bin/activate
+
+# Verify activation (you should see (globus-env) in your prompt)
+which python
+```
+
+To deactivate the virtual environment later:
+```bash
+deactivate
+```
+
+### 2. Install Dependencies
+```bash
+# Make sure virtual environment is activated
 pip install -r requirements.txt
 ```
 
-### 2. Register a Globus Auth App
+### 3. Install Globus CLI (Global Installation)
+
+The Globus CLI is used for authentication and can be installed globally on the system:
+
+```bash
+# Install Globus CLI globally
+sudo pip install globus-cli
+
+# Or if pip is not available, try:
+python3 -m pip install --user globus-cli
+
+# Verify installation
+globus version
+```
+
+**Alternative installation methods:**
+```bash
+# Via snap (if available)
+sudo snap install globus-cli
+
+# Via conda (if available)
+conda install -c conda-forge globus-cli
+```
+
+### 4. Authenticate with Globus CLI
+```bash
+# Login to Globus (this will open a browser for authentication)
+globus login
+
+# Verify you're logged in
+globus whoami
+
+# Logout when needed
+globus logout
+```
+
+**Note:** The script uses OAuth2 authentication directly, but having the CLI installed and logged in can be helpful for testing endpoints and troubleshooting.
+
+### 5. Register a Globus Auth App
 
 Before using the script, you need to register your own application in Globus Auth:
 
@@ -42,20 +101,29 @@ Before using the script, you need to register your own application in Globus Aut
 
 For more detailed instructions, see the [official Globus SDK documentation](https://globus-sdk-python.readthedocs.io/en/stable/user_guide/getting_started/register_app.html).
 
-### 3. Create Your Configuration File
+### 6. Create Your Configuration File
 ```bash
 cp env_template.txt .env
 ```
 
-### 4. Configure Your `.env` File
+### 7. Configure Your `.env` File
 Edit `.env` and fill in your actual values:
 - `SRC_ID`: Your source endpoint ID (lefocalcul endpoint)
 - `DST_ID`: Your destination endpoint ID (DFDR collection)
-- `GLOBUS_CLIENT_ID`: Your registered app's client ID from step 2
+- `GLOBUS_CLIENT_ID`: Your registered app's client ID from step 5
 - `FILE_PATTERN`: File pattern to match (e.g., `*CHM*.tif`)
 - Other settings as needed
 
 ## Usage
+
+### Activate Virtual Environment (if using one):
+```bash
+# Activate the virtual environment
+source globus-env/bin/activate
+
+# Verify you're in the virtual environment
+which python
+```
 
 ### Basic Transfer:
 ```bash
@@ -133,14 +201,31 @@ DRY_RUN=false
 
 ## Troubleshooting
 
-1. **Authentication errors**: 
+1. **Virtual Environment Issues**:
+   - Make sure the virtual environment is activated: `source globus-env/bin/activate`
+   - Verify Python path: `which python` should show the venv path
+   - If packages are missing, reinstall: `pip install -r requirements.txt`
+
+2. **Globus CLI Installation Issues**:
+   - If `sudo pip install globus-cli` fails, try: `python3 -m pip install --user globus-cli`
+   - Add user bin to PATH: `export PATH="$HOME/.local/bin:$PATH"`
+   - Verify installation: `globus version`
+
+3. **Authentication errors**: 
    - Make sure you've registered your app in [Globus Auth Developer Console](https://auth.globus.org/v2/web/developers)
    - Verify your `GLOBUS_CLIENT_ID` is correct in the `.env` file
    - If authorization code fails, get a fresh one from the browser
-2. **Endpoint errors**: Verify your endpoint IDs are correct and accessible
-3. **File not found**: Check that `SRC_ROOT` path exists and contains the expected directory structure
-4. **Permission errors**: Ensure you have read access to source files and write access to destination
-5. **OAuth flow issues**: Make sure your app is configured with the correct redirect URI: `https://auth.globus.org/v2/web/auth-code`
+   - Test CLI login: `globus login` and `globus whoami`
+
+4. **Endpoint errors**: 
+   - Verify your endpoint IDs are correct and accessible
+   - Test with CLI: `globus endpoint search --filter-scope=recently-used`
+
+5. **File not found**: Check that `SRC_ROOT` path exists and contains the expected directory structure
+
+6. **Permission errors**: Ensure you have read access to source files and write access to destination
+
+7. **OAuth flow issues**: Make sure your app is configured with the correct redirect URI: `https://auth.globus.org/v2/web/auth-code`
 
 ## References
 
