@@ -1,7 +1,6 @@
 # requirements:
 # - an Internet connexion
 # - python3 installed
-# - within the UdeM network, or having the UdeM VPN active
 # - tunnel to lefoai active
 
 # Create the Python virtual environment where the python script is located
