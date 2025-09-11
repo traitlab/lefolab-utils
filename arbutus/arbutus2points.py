@@ -234,7 +234,7 @@ def main(output_dir, points_layer, config_path, project_qualifier, max_workers=8
         ["rclone", "--config", config_path, "lsf", "AllianceCanBuckets:", "--dirs-only"],
         capture_output=True, text=True
     )
-    folders = [f.strip() for f in list_folders.stdout.splitlines() if project_qualifier in f and 'wpt' in f]
+    folders = [f.strip() for f in list_folders.stdout.splitlines() if project_qualifier.lower() in f and 'wpt' in f]
 
     # Loop through each folder and process image pairs
     rows = []
@@ -313,15 +313,18 @@ def main(output_dir, points_layer, config_path, project_qualifier, max_workers=8
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process Arbutus BCI image folders in parallel.")
     parser.add_argument("--output_dir", required=True, help="Output directory for logs and points layer.")
-    parser.add_argument("--points_layer", required=True, help="Points layer filename to use or create. Must be in output directory if using existing one.")
     parser.add_argument("--config_path", required=True, help="Path to rclone config file.")
     parser.add_argument("--project_qualifier", required=True, help="Project qualifier string.")
     parser.add_argument("--max_workers", type=int, default=8, help="Number of parallel workers.")
+    parser.add_argument("--points_layer", required=False, help="Points layer filename to use or create. Defaults to '<project_qualifier>_wpt.gpkg'.")
     args = parser.parse_args()
+
+    # Set default points_layer if not provided
+    points_layer = args.points_layer if args.points_layer else f"{args.project_qualifier}_wpt.gpkg"
 
     main(
         output_dir=args.output_dir,
-        points_layer=args.points_layer,
+        points_layer=points_layer,
         config_path=args.config_path,
         project_qualifier=args.project_qualifier,
         max_workers=args.max_workers
