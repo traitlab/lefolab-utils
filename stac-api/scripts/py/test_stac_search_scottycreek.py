@@ -1,7 +1,6 @@
 # requirements:
 # - an Internet connexion
 # - python3 installed
-# - tunnel to lefoai active
 
 # Create the Python virtual environment where the python script is located
 # cd /where/your/python/script/is/located
