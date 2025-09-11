@@ -11,10 +11,10 @@
 
 # Setup the Python virtual environment
 # python3 -m pip install --upgrade pip
-# python3 -m pip install requests
+# python3 -m pip install rasterio
 
 # Execute your script
-# python3 test_stac_search.py
+# python3 test_stac_read_metadata.py
 
 # Deactivate the Python virtual environment once not needed anymore
 
