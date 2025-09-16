@@ -1,7 +1,10 @@
 import csv
-from datetime import datetime
-from d2spy.workspace import Workspace
 import os
+import requests
+import time
+
+from d2spy.workspace import Workspace
+from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv("d2s/.env")
@@ -14,6 +17,20 @@ class MyWorkspace(Workspace):
         auth.login(email=email, password=password)
         api_key = getattr(auth.session, "d2s_data", {}).get("API_KEY", "")
         return cls(base_url, auth.session, api_key)
+
+def safe_add_data_product(flight, filepath, data_type, max_retries=3, delay=10):
+    for attempt in range(max_retries):
+        try:
+            flight.add_data_product(filepath=filepath, data_type=data_type)
+            return True
+        except requests.exceptions.SSLError as e:
+            print(f"SSL error on {data_type} upload (attempt {attempt+1}/{max_retries}): {e}")
+            time.sleep(delay)
+        except Exception as e:
+            print(f"Error on {data_type} upload (attempt {attempt+1}/{max_retries}): {e}")
+            time.sleep(delay)
+    print(f"Failed to upload {data_type} after {max_retries} attempts.")
+    return False
 
 email = os.environ.get("D2S_EMAIL")
 password = os.environ.get("D2S_PASSWORD")
@@ -42,17 +59,8 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
         )
         print(flight)
         dsm = f"{conrad_path}/{name}/{name}_dsm.cog.tif"
-        flight.add_data_product(
-            filepath=dsm,
-            data_type="dsm"
-        )
+        safe_add_data_product(flight, dsm, "dsm")
         rgb = f"{conrad_path}/{name}/{name}_rgb.cog.tif"
-        flight.add_data_product(
-            filepath=rgb,
-            data_type="ortho"
-        )
+        safe_add_data_product(flight, rgb, "ortho")
         ptc = f"{conrad_path}/{name}/{name}_pg.copc.laz"
-        flight.add_data_product(
-            filepath=ptc,
-            data_type="point_cloud"
-        )
+        safe_add_data_product(flight, ptc, "point_cloud")
