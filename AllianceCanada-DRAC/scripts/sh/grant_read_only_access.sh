@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Usage: /bin/bash grant_readonly_access.sh <PI> <shared_folder> <owner_user> <target_user>
-# Example: /bin/bash grant_readonly_access.sh elalib sharing vincelf jcarreau
+# Usage: /bin/bash grant_read_only_access.sh <PI> <shared_folder> <owner_user> <target_user>
+# Example: /bin/bash grant_read_only_access.sh elalib sharing vincelf jcarreau
 # will give access (x) and read permission (r) to jcarreau at /home/vincelf/projects/def-elalib/sharing
 
 # Exit on any error
@@ -26,7 +26,9 @@ echo ":closed_lock_with_key: Granting read-only access to '${TARGET_USER}' on '$
 
 # Step 1: Allow path traversal to the shared folder
 setfacl -m u:${TARGET_USER}:x /home/${OWNER}
-setfacl -m u:${TARGET_USER}:x /home/${OWNER}/projects/def-${PI}
+if [ "$PI" == "$TARGET_USER" ]; then
+  setfacl -m u:${TARGET_USER}:x /home/${OWNER}/projects/def-${PI}
+fi
 
 # Step 2: Give read + execute access to the shared folder
 setfacl -m u:${TARGET_USER}:rx ${BASE_PATH}
