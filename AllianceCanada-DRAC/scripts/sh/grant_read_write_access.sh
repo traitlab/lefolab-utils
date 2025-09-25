@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Usage: /bin/bash grant_readwrite_access.sh <PI> <shared_folder> <owner_user> <target_user>
+# Usage: /bin/bash grant_read_write_access.sh <PI> <shared_folder> <owner_user> <target_user>
 # Example: /bin/bash grant_readwrite_access.sh elalib sharing/tree_ssl vincelf hugobaud
 # will give read-write access (rw) to hugobaud at /home/vincelf/projects/def-elalib/sharing/tree_ssl
 
