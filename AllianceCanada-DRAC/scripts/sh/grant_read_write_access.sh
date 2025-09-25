@@ -26,7 +26,9 @@ echo ":closed_lock_with_key: Granting read-write access to '${TARGET_USER}' on '
 
 # Step 1: Allow path traversal (no read/write, just execute to traverse)
 setfacl -m u:${TARGET_USER}:x /home/${OWNER}
-setfacl -m u:${TARGET_USER}:x /home/${OWNER}/projects/def-${PI}
+if [ "$PI" == "$TARGET_USER" ]; then
+    setfacl -m u:${TARGET_USER}:x /home/${OWNER}/projects/def-${PI}
+fi
 
 # Step 2: Give read + write + execute access to the shared folder
 setfacl -m u:${TARGET_USER}:rwx ${BASE_PATH}
