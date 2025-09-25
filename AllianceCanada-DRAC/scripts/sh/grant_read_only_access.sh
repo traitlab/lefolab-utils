@@ -26,7 +26,7 @@ echo ":closed_lock_with_key: Granting read-only access to '${TARGET_USER}' on '$
 
 # Step 1: Allow path traversal to the shared folder
 setfacl -m u:${TARGET_USER}:x /home/${OWNER}
-if [ "$PI" == "$TARGET_USER" ]; then
+if [ "$PI" != "$TARGET_USER" ]; then
   setfacl -m u:${TARGET_USER}:x /home/${OWNER}/projects/def-${PI}
 fi
 
