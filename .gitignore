@@ -61,6 +61,7 @@ temp*/
 
 # Environment variables
 .env
+*.env
 .Renviron
 
 # Data folder not to be shared
