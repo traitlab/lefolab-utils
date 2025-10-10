@@ -271,14 +271,27 @@ def main():
     
     logger.info(f"Processing code: {args.code}")
     
-    # Find the specific file pair
-    tif_path = args.input_dir / f"{args.code}_odm_orthophoto.tif"
-    gpkg_path = args.input_dir / f"dataset_{args.code}_aoi_only.gpkg"
+    # Find files that match the code
+    # TIF: starts with {code}_*.tif
+    # GPKG: dataset_{code}_aoi_only.gpkg
     
-    # Check if files exist
-    if not tif_path.exists():
-        logger.error(f"Orthomosaic not found: {tif_path}")
+    # Search for TIF file starting with code
+    tif_files = list(args.input_dir.glob(f"{args.code}_*.tif"))
+    
+    if not tif_files:
+        logger.error(f"No orthomosaic found starting with: {args.code}_*.tif in {args.input_dir}")
         sys.exit(1)
+    
+    if len(tif_files) > 1:
+        logger.warning(f"Multiple TIF files found for code {args.code}:")
+        for f in tif_files:
+            logger.warning(f"  - {f.name}")
+        logger.info(f"Using first match: {tif_files[0].name}")
+    
+    tif_path = tif_files[0]
+    
+    # Find GPKG file
+    gpkg_path = args.input_dir / f"dataset_{args.code}_aoi_only.gpkg"
     
     if not gpkg_path.exists():
         logger.error(f"AOI file not found: {gpkg_path}")
