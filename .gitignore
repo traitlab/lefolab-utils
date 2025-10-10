@@ -1,3 +1,5 @@
+*.config
+
 *.tiff
 *.tif
 # History files
