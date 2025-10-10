@@ -1,5 +1,6 @@
 import argparse
 import branca.colormap as bcm
+import datetime
 import exifread
 import folium
 import logging
@@ -11,6 +12,7 @@ import re
 import requests
 import rioxarray
 import shutil
+import sys
 import time
 import xml.etree.ElementTree as ET
 
@@ -35,12 +37,11 @@ if not ALLIANCECAN_URL:
 if not BASE_PATH_CONRAD:
     raise ValueError("BASE_PATH_CONRAD environment variable is not set")
 
-def search_latest_mapping(year, mission_id):
+def search_latest_mapping(mission_id):
     """
     Search for the most recent mapping mission in BASE_PATH_CONRAD/YYYY/ by zoom mission.
 
     Args:
-        year (str): The year of the mapping mission.
         mission_id (str): Zoom mission_id to filter mapping missions.
 
     Returns:
@@ -48,10 +49,9 @@ def search_latest_mapping(year, mission_id):
     """
     logger = logging.getLogger('MapGenerator')
     
-    folder_path = os.path.join(BASE_PATH_CONRAD, year)
-
-    if not os.path.exists(folder_path):
-        logger.error(f"Folder path does not exist: {folder_path}")
+    # Search years from current year down to 2017
+    current_year = datetime.datetime.now().year
+    years = [str(y) for y in range(current_year, 2016, -1)]
     
     if '_' in mission_id:
         parts = mission_id.split('_')
@@ -59,15 +59,22 @@ def search_latest_mapping(year, mission_id):
     else:
         logger.error(f"Invalid mission_id format: {mission_id}. Expected an underscore ('_') in the ID.")
     
-    # Get all subdirectories in the folder that match the keyword
-    matching_dirs = [
-        d for d in os.listdir(folder_path)
-        if os.path.isdir(os.path.join(folder_path, d)) and f"_{keyword}_" in d
-    ]
+    matching_dirs = []
+    for year in years:
+        folder_path = os.path.join(BASE_PATH_CONRAD, year)
+        if not os.path.exists(folder_path):
+            continue
+        # Get all subdirectories in the folder that match the keyword
+        matches = [
+            d for d in os.listdir(folder_path)
+            if os.path.isdir(os.path.join(folder_path, d)) and f"_{keyword}_" in d
+        ]
+        matching_dirs.extend(matches)
 
     # If no matching directories found, raise error
     if not matching_dirs:
-        logger.error(f"No matching collection found for mission_id: {mission_id}")
+        logger.error(f"No mapping mission found for zoom mission {mission_id}. Specify a mapping mission manually.")
+        raise ValueError(f"No mapping mission found for zoom mission {mission_id}. Specify a mapping mission manually.")
 
     # Sort directories by date (most recent first)
     matching_dirs.sort(
@@ -77,38 +84,6 @@ def search_latest_mapping(year, mission_id):
 
     # Return the most recent directory name
     return matching_dirs[0]
-
-# def get_bounding_box(STAC_API_URL, mission_id):
-#     """
-#     Fetch the bounding box of a mission from a STAC API.
-
-#     Args:
-#         STAC_API_URL (str): URL of the STAC API.
-#         mission_id (str): ID of the mission to query.
-
-#     Returns:
-#         list or None: The bounding box [west, south, east, north] if found, otherwise None.
-#     """
-#     # Build the URL for the specific collection
-#     url = f"{STAC_API_URL}/collections/{mission_id}"
-
-#     # Send the GET request
-#     response = requests.get(url)
-
-#     # Check if the request was successful
-#     if response.status_code == 200:
-#         # Parse the response JSON
-#         data = response.json()
-#         bbox = data.get("bbox", None)
-
-#         if bbox:
-#             return bbox
-#         else:
-#             print("Bounding Box not found in the response.")
-#             return None
-#     else:
-#         print(f"Failed to fetch data. HTTP Status Code: {response.status_code}")
-#         return None
 
 def get_bounding_box_from_raster(raster_path):
     """
@@ -355,9 +330,11 @@ def create_map(lat, lon, rgb_png_url, dtm_png_url, bbox, output_path, dsm_path=N
     # Validate bbox keys
     required_keys = ['south_min_lat_y_deg', 'west_min_lon_x_deg', 'north_max_lat_y_deg', 'east_max_lon_x_deg']
     if not bbox:
+        logger.error("Bounding box is None. Cannot create map.")
         raise ValueError("Bounding box is None. Cannot create map.")
     if not all(key in bbox for key in required_keys):
         missing_keys = set(required_keys) - set(bbox.keys())
+        logger.error(f"Missing required keys in bbox: {', '.join(missing_keys)}. Provided bbox: {bbox}")
         raise ValueError(f"Missing required keys in bbox: {', '.join(missing_keys)}. Provided bbox: {bbox}")
 
     # Convert bbox to the required bounds format for Folium
@@ -381,6 +358,7 @@ def create_map(lat, lon, rgb_png_url, dtm_png_url, bbox, output_path, dsm_path=N
             # Get DTM bounds
             dtm_bbox = get_bounding_box_from_raster(dtm_path)
             if not dtm_bbox:
+                logger.error("Could not get DTM bounds")
                 raise ValueError("Could not get DTM bounds")
 
             dtm_bounds = [
@@ -400,12 +378,14 @@ def create_map(lat, lon, rgb_png_url, dtm_png_url, bbox, output_path, dsm_path=N
             if 'x' in dem.dims and 'y' in dem.dims:
                 dem = dem.rename({'x': 'longitude', 'y': 'latitude'})
             else:
+                logger.error(f"Unexpected dimension names in DTM file: {dem.dims}")
                 raise ValueError(f"Unexpected dimension names in DTM file: {dem.dims}")
             arr_dem = dem.values
 
             if dem.rio.nodata is not None:
                 masked = np.ma.masked_equal(arr_dem[0], dem.rio.nodata)
             else:
+                logger.error("NoData value is not defined in the raster file.")
                 raise ValueError("NoData value is not defined in the raster file.")
 
             # Compute min and max for color scale (based only on valid data)
@@ -449,34 +429,49 @@ def create_map(lat, lon, rgb_png_url, dtm_png_url, bbox, output_path, dsm_path=N
     m.save(output_path)
 
 def setup_logging(mission_id, output_dir):
-    """Configure logging to both file and console."""
-    # Create logs directory
+    """Configure logging to separate files and streams by level."""
     log_dir = os.path.join(output_dir, mission_id, 'labelbox')
     os.makedirs(log_dir, exist_ok=True)
-    
-    # Set up logging configuration
-    log_file = os.path.join(log_dir, f'{mission_id}_generate_maps.log')
-    
-    # Create a logger
+
+    info_log_file = os.path.join(log_dir, f'{mission_id}_maps_info.log')
+    error_log_file = os.path.join(log_dir, f'{mission_id}_maps_error.log')
+
     logger = logging.getLogger('MapGenerator')
     logger.setLevel(logging.INFO)
-    
-    # Create handlers
-    file_handler = logging.FileHandler(log_file)
-    console_handler = logging.StreamHandler()
-    
-    # Create formatter
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    file_handler.setFormatter(formatter)
-    console_handler.setFormatter(formatter)
-    
-    # Add handlers to logger
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
-    
+    logger.handlers = []  # Remove any existing handlers
+
+    # Formatter
+    formatter = logging.Formatter('[%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+
+    # INFO handler to stdout and info.log
+    info_stream_handler = logging.StreamHandler(sys.stdout)
+    info_stream_handler.setLevel(logging.INFO)
+    info_stream_handler.addFilter(lambda record: record.levelno == logging.INFO)
+    info_stream_handler.setFormatter(formatter)
+
+    info_file_handler = logging.FileHandler(info_log_file)
+    info_file_handler.setLevel(logging.INFO)
+    info_file_handler.addFilter(lambda record: record.levelno == logging.INFO)
+    info_file_handler.setFormatter(formatter)
+
+    # WARNING/ERROR handler to stderr and error.log
+    error_stream_handler = logging.StreamHandler(sys.stderr)
+    error_stream_handler.setLevel(logging.WARNING)
+    error_stream_handler.setFormatter(formatter)
+
+    error_file_handler = logging.FileHandler(error_log_file)
+    error_file_handler.setLevel(logging.WARNING)
+    error_file_handler.setFormatter(formatter)
+
+    # Add handlers
+    logger.addHandler(info_stream_handler)
+    logger.addHandler(info_file_handler)
+    logger.addHandler(error_stream_handler)
+    logger.addHandler(error_file_handler)
+
     return logger
 
-def main(mission_id, year, output_dir, dtm_path=None, project_id=None, mapping_mission=None):
+def main(mission_id, output_dir, dtm_path=None, github_project=None, mapping_mission=None):
     """Main function to process a mission"""
     start_time = time.time()
     # Configure logging
@@ -485,12 +480,18 @@ def main(mission_id, year, output_dir, dtm_path=None, project_id=None, mapping_m
     
     # Use provided mapping_mission or search for the latest
     if mapping_mission:
-        logger.info(f"Using provided mapping_mission: {mapping_mission}")
+        logger.info(f"Using provided mapping mission: {mapping_mission}")
     else:
-        mapping_mission = search_latest_mapping(year, mission_id)
+        mapping_mission = search_latest_mapping(mission_id)
+        logger.info(f"Found mapping mission: {mapping_mission}")
         if not mapping_mission:
-            logger.warning(f"No mapping_mission found for zoom mission: {mission_id}")
-            return
+            logger.error(f"No mapping mission found for zoom mission {mission_id}. Specify a mapping mission manually.")
+            raise ValueError(f"No mapping mission found for zoom mission {mission_id}. Specify a mapping mission manually.")
+
+    if not re.match(r'^\d{8}', mapping_mission):
+        logger.error(f"Mapping mission {mapping_mission} does not start with 8 digits")
+        raise ValueError(f"Mapping mission {mapping_mission} does not start with 8 digits")
+    year = mapping_mission[:4]
 
     basename_path = f"{BASE_PATH_CONRAD}/{year}/{mapping_mission}/{mapping_mission}"
 
@@ -623,9 +624,9 @@ def main(mission_id, year, output_dir, dtm_path=None, project_id=None, mapping_m
         else:
             logger.warning(f"RGB overview file not found: {rgb_overview_src}")
         
-        # Copy DTM overview file if project_id is provided
-        if project_id:
-            dtm_overview_src = f"/app/lefolab-utils/Labelbox/{project_id}/{project_id}_dtm.overview.png"
+        # Copy DTM overview file if github_project is provided
+        if github_project:
+            dtm_overview_src = f"/app/lefolab-utils/Labelbox/{github_project}/{github_project}_dtm.overview.png"
             dtm_overview_dest = f"{dest_dir}/{mapping_mission}_dtm.overview.png"
             
             if os.path.exists(dtm_overview_src):
@@ -640,18 +641,14 @@ def main(mission_id, year, output_dir, dtm_path=None, project_id=None, mapping_m
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process drone close-up pictures mission data and create maps.')
     parser.add_argument('--mission_id', required=True, help='ID of the mission to process')
-    parser.add_argument('--year', help='Year of the mission (default to first 4 digits of mission_id)')
     parser.add_argument('--output_dir', required=True, help='Base directory where output folder and maps will be saved')
     parser.add_argument('--dtm_path', help='Path to DTM file (optional)') 
-    parser.add_argument('--project_id', help='Project ID for copying DTM overview file from GitHub repo (optional)')
+    parser.add_argument('--github_project', help='Github project name for copying DTM overview file from GitHub repo (optional)')
     parser.add_argument('--mapping_mission', help='Explicit mapping mission ID to use for overview (optional)')
     args = parser.parse_args()
-    
-    # Use provided year or extract from mission_id
-    year = args.year
-    if not year:
-        if not re.match(r'^\d{8}', args.mission_id):
-            raise ValueError(f"Mission ID {args.mission_id} does not start with 8 digits")
-        year = args.mission_id[:4]
 
-    main(args.mission_id, year, args.output_dir, args.dtm_path, args.project_id, args.mapping_mission)
+    try:
+        main(args.mission_id, args.output_dir, args.dtm_path, args.github_project, args.mapping_mission)
+    except Exception as e:
+        logging.getLogger('MapGenerator').error(f"Fatal error: {str(e)}")
+        sys.exit(1)  # Exit with error code for bash script to catch

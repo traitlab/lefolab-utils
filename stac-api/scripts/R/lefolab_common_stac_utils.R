@@ -4,6 +4,12 @@ library(rstac)
 library(stringr)
 library(purrr)
 
+# redefine temporary caching space for the libraries
+custom_tmp <- "/data/$USER/tmp" 
+dir.create(custom_tmp, showWarnings = FALSE, recursive = TRUE)
+Sys.setenv(TMPDIR = custom_tmp, TEMP = custom_tmp, TMP = custom_tmp)
+terraOptions(tempdir = custom_tmp)
+
 # Search STAC collections with flexible parameters
 default_bbox <- c(-79.76259, 45.00495, -57.10592, 62.58502)
 default_limit <- 200
