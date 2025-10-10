@@ -1,3 +1,27 @@
+# requirements:
+# - an Internet connexion
+# - python3 installed
+
+# Create the Python virtual environment where the python script is located
+# cd /where/your/python/script/is/located
+# python3 -m venv .venv
+
+# Activate the Python virtual environment
+# source ./.venv/bin/activate
+
+# Setup the Python virtual environment
+# python3 -m pip install --upgrade pip
+# python3 -m pip install rasterio dotenv
+
+# Create a .env file in the same directory as this script using the name of the script with the .env extension
+# RASTER_USER=your_username
+# RASTER_PASSWORD=your_password
+
+# Execute your script
+# python3 test_stac_read_metadata_basicauth.py
+
+# Deactivate the Python virtual environment once not needed anymore
+
 import os
 from pathlib import Path
 import rasterio
