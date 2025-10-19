@@ -10,21 +10,13 @@ import subprocess
 import sys
 import time
 
-from contextlib import contextmanager, redirect_stderr
+from contextlib import redirect_stderr
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
 from io import StringIO
 from requests.adapters import HTTPAdapter
 from shapely.geometry import Point
-from tqdm import tqdm
 from urllib3.util.retry import Retry
-
-@contextmanager
-def suppress_stderr():
-    """Context manager to suppress stderr."""
-    with open(os.devnull, 'w') as fnull:
-        with redirect_stderr(fnull):
-            yield
 
 def convert_to_decimal_degrees(value, ref):
     """
@@ -238,7 +230,7 @@ def main(output_dir, points_layer, config_path, project_qualifier, max_workers=8
 
     # Loop through each folder and process image pairs
     rows = []
-    for folder in tqdm(folders, desc='Folders Progress', unit='folder'):
+    for folder in folders:
         folder = folder.rstrip('/')
         file_list = subprocess.run(
             ["rclone", "--config", config_path, "lsf", f"AllianceCanBuckets:{folder}", "--files-only", "-R"],
