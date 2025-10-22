@@ -146,7 +146,12 @@ convert_geotiff_to_overview() {
         log ${SERVICE_NAME} "INFO" "Using PNG format (no geospatial data)"
     fi
     
-    local output_file="${OUTPUT_DIR}/${base_name}_overview.${file_extension}"
+    # Set output filename with .cog for COG format
+    if [[ "$OUTPUT_FORMAT" == "tiff" ]]; then
+        local output_file="${OUTPUT_DIR}/${base_name}_overview.cog.${file_extension}"
+    else
+        local output_file="${OUTPUT_DIR}/${base_name}_overview.${file_extension}"
+    fi
     
     log ${SERVICE_NAME} "INFO" "Converting: $geotiff_file"
     log ${SERVICE_NAME} "INFO" "Output: $output_file"
