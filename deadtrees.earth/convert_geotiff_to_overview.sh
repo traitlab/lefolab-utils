@@ -9,13 +9,11 @@ set -o nounset
 date
 
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-source "${SCRIPT_DIR}/lib/lib_utils2.sh"
+source "${SCRIPT_DIR}/lib/lib_utils.sh"
 
 SERVICE_NAME="convert_geotiff_to_overview"
 
 # Default paths - adjust these as needed
-GEOTIFF_DIR="/mnt/ceph/def-elalib-ivado/ivado/dataset/deadtrees.earth/3034orthos"
-OUTPUT_DIR="$GEOTIFF_DIR"
 MAX_DIMENSION=1024
 
 # Default output format
@@ -23,19 +21,26 @@ OUTPUT_FORMAT="PNG"
 
 # Function to show usage
 show_usage() {
-    echo "Usage: $0 [OPTIONS] [geotiff_filename]"
+    echo "Usage: $0 -i INPUT_DIR -o OUTPUT_DIR [OPTIONS] [geotiff_filename]"
+    echo "   or: $0 -w WORKDIR [OPTIONS] [geotiff_filename]  # when input and output are the same"
+    echo ""
+    echo "Required (choose one):"
+    echo "  -i, --input-dir DIR    Input directory containing GeoTIFF files"
+    echo "  -o, --output-dir DIR   Output directory"
+    echo "  -w, --workdir DIR      Same directory for both input and output (shortcut)"
     echo ""
     echo "Options:"
     echo "  -f, --format FORMAT    Output format: 'tiff' or 'png' (default: png)"
     echo "  -d, --max-dimension N  Maximum dimension for resizing (default: 1024)"
-    echo "  -o, --output-dir DIR   Output directory (default: same as input directory)"
     echo "  -h, --help            Show this help message"
     echo ""
     echo "Examples:"
-    echo "  $0                                    # Convert all GeoTIFFs to PNG overviews"
-    echo "  $0 -f tiff                           # Convert all GeoTIFFs to TIFF overviews with CRS"
-    echo "  $0 -f png file.tif                   # Convert specific file to PNG"
-    echo "  $0 -f tiff -d 2048 file.tif         # Convert specific file to TIFF with CRS, max 2048px"
+    echo "  $0 -i /path/to/input -o /path/to/output                # Convert all GeoTIFFs to PNG overviews"
+    echo "  $0 -i /path/to/input -o /path/to/output -f tiff        # Convert all GeoTIFFs to TIFF overviews with CRS"
+    echo "  $0 -i /path/to/input -o /path/to/output -f png file.tif # Convert specific file to PNG"
+    echo "  $0 -i /path/to/input -o /path/to/output -f tiff -d 2048 file.tif # Convert specific file to TIFF with CRS, max 2048px"
+    echo "  $0 -w /path/to/data -f tiff                            # Process files in place (same input/output dir)"
+    echo "  $0 -w /path/to/data -f tiff -d 2048 file.tif          # Process specific file in place with custom size"
     echo ""
     echo "Note: TIFF format always preserves the original coordinate reference system."
     echo "      PNG format always strips geospatial information."
@@ -52,7 +57,16 @@ while [[ $# -gt 0 ]]; do
             MAX_DIMENSION="$2"
             shift 2
             ;;
+        -i|--input-dir)
+            GEOTIFF_DIR="$2"
+            shift 2
+            ;;
         -o|--output-dir)
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        -w|--workdir)
+            GEOTIFF_DIR="$2"
             OUTPUT_DIR="$2"
             shift 2
             ;;
@@ -72,6 +86,19 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Check if required directories are provided
+if [[ -z "${GEOTIFF_DIR:-}" ]]; then
+    echo "Error: Input directory is required. Use -i/--input-dir or -w/--workdir option." >&2
+    show_usage
+    exit 1
+fi
+
+if [[ -z "${OUTPUT_DIR:-}" ]]; then
+    echo "Error: Output directory is required. Use -o/--output-dir or -w/--workdir option." >&2
+    show_usage
+    exit 1
+fi
 
 # Validate output format
 if [[ "$OUTPUT_FORMAT" != "tiff" && "$OUTPUT_FORMAT" != "png" ]]; then
