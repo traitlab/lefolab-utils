@@ -36,11 +36,11 @@ show_usage() {
     echo ""
     echo "Examples:"
     echo "  $0 -i /path/to/input -o /path/to/output                # Convert all GeoTIFFs to PNG overviews"
-    echo "  $0 -i /path/to/input -o /path/to/output -f tiff        # Convert all GeoTIFFs to TIFF overviews with CRS"
+    echo "  $0 -i /path/to/input -o /path/to/output -f tiff        # Convert all GeoTIFFs to TIFF overviews with CRS, pyramids, and COG"
     echo "  $0 -i /path/to/input -o /path/to/output -f png file.tif # Convert specific file to PNG"
-    echo "  $0 -i /path/to/input -o /path/to/output -f tiff -d 2048 file.tif # Convert specific file to TIFF with CRS, max 2048px"
-    echo "  $0 -w /path/to/data -f tiff                            # Process files in place (same input/output dir)"
-    echo "  $0 -w /path/to/data -f tiff -d 2048 file.tif          # Process specific file in place with custom size"
+    echo "  $0 -i /path/to/input -o /path/to/output -f tiff -d 2048 file.tif # Convert specific file to TIFF with CRS, pyramids, COG, max 2048px"
+    echo "  $0 -w /path/to/data -f tiff                            # Process files in place with pyramids and COG"
+    echo "  $0 -w /path/to/data -f tiff -d 2048 file.tif          # Process specific file with pyramids and COG"
     echo ""
     echo "Note: TIFF format always preserves the original coordinate reference system."
     echo "      PNG format always strips geospatial information."
@@ -134,9 +134,11 @@ convert_geotiff_to_overview() {
     # Set output format and extension
     if [[ "$OUTPUT_FORMAT" == "tiff" ]]; then
         file_extension="tif"
-        gdal_format="GTiff"
-        gdal_options="-co COMPRESS=DEFLATE -co TILED=YES"
-        log ${SERVICE_NAME} "INFO" "Using TIFF format with CRS preservation"
+        gdal_format="COG"
+        
+        # Build GDAL options for COG with automatic overviews
+        gdal_options="-co COMPRESS=DEFLATE -co BIGTIFF=IF_SAFER -co OVERVIEWS=AUTO -co BLOCKSIZE=128"
+        log ${SERVICE_NAME} "INFO" "Using COG format with CRS preservation and automatic pyramids"
     else
         file_extension="png"
         gdal_format="PNG"
@@ -173,19 +175,19 @@ convert_geotiff_to_overview() {
     
     log ${SERVICE_NAME} "INFO" "Resizing to: ${new_width}x${new_height}"
     
-    # Convert using GDAL
-    gdal_translate \
-        -of "$gdal_format" \
-        -outsize "$new_width" "$new_height" \
+    # Convert using GDAL with COG driver for automatic overviews
+    gdalcmd=$(gdal_translate -of "$gdal_format" \
         $gdal_options \
+        -outsize "$new_width" "$new_height" \
         "$geotiff_file" \
-        "$output_file"
+        "$output_file" 2>&1)
     
     if [[ $? -eq 0 ]]; then
         log ${SERVICE_NAME} "INFO" "Successfully converted: $base_name"
         return 0
     else
         log ${SERVICE_NAME} "ERROR" "Failed to convert: $geotiff_file"
+        log ${SERVICE_NAME} "ERROR" "GDAL output: $gdalcmd"
         return 1
     fi
 }
