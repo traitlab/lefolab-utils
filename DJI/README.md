@@ -47,4 +47,16 @@ Shifts the geotagged coordinates of pictures based on a new base station positio
 
 ---
 
+## clean_missing_tag_photos.py
+Cleans timestamp files before PPK processing by removing photos without valid GPS tags. Scans all subfolders within a DJI mission directory, identifies lines in timestamp `.MRK` files containing `-259200.000000` (indicating missing GPS data), removes those lines, and deletes the corresponding photo files.
+
+**Usage:**
+- Run `python clean_missing_tag_photos.py` and enter the path to your DJI mission directory.
+- The script will scan all subfolders for timestamp files and photos.
+- Review the summary of actions (lines to remove and images to delete).
+- Confirm to proceed. Backups of timestamp files are created automatically.
+- Processes all subfolders in batch with a single confirmation.
+
+---
+
 For more details, see comments in each script or contact the script author.
