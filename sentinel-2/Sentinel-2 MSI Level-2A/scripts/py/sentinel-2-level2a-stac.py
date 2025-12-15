@@ -67,35 +67,35 @@ def list_s2_assets(year: int, cloud_lt: int = 80, limit: int = 500, max_retries:
                 props = item.properties
                 signed = pc.sign(item)
 
-                # Prefer visual, then B04 (red), then first available
-                asset_keys = ["visual", "B04", "B03", "B02", "B08"]
-                selected_key = None
-                selected_asset = None
+                # Collect all RGB bands + infrared for each item
+                asset_keys = ["B02", "B03", "B04", "B08"]  # RGB + infrared bands
+                available_assets = {}
                 
                 for key in asset_keys:
                     if key in signed.assets:
-                        selected_key = key
-                        selected_asset = signed.assets[key]
-                        break
+                        available_assets[key] = signed.assets[key]
                 
-                # Skip if no suitable asset found
-                if selected_key is None:
+                # Skip if no RGB/infrared assets found
+                if not available_assets:
                     continue
 
-                rows.append({
-                    "year": year,
-                    "datetime": props.get("datetime"),
-                    "cloud_cover": props.get("eo:cloud_cover"),
-                    "tile": props.get("s2:mgrs_tile"),
-                    "item_id": item.id,
-                    "asset_key": selected_key,
-                    "href_signed": selected_asset.href,  # signed URL (expires)
+                # Create a row for each available band
+                for asset_key, asset in available_assets.items():
+                    rows.append({
+                        "year": year,
+                        "datetime": props.get("datetime"),
+                        "cloud_cover": props.get("eo:cloud_cover"),
+                        "tile": props.get("s2:mgrs_tile"),
+                        "item_id": item.id,
+                        "asset_key": asset_key,
+                        "href_signed": asset.href,  # signed URL (expires)
 
-                    # optional extras (keep if you want them in the CSV)
-                    "platform": props.get("platform"),
-                    "asset_title": getattr(selected_asset, "title", None),
-                    "media_type": selected_asset.media_type,
-                })
+                        # optional extras (keep if you want them in the CSV)
+                        "platform": props.get("platform"),
+                        "asset_title": getattr(asset, "title", None),
+                        "media_type": asset.media_type,
+                    })
+                
                 item_count += 1
                 
                 # Small delay to avoid rate limiting
@@ -152,15 +152,19 @@ def list_s2_assets(year: int, cloud_lt: int = 80, limit: int = 500, max_retries:
         kind="mergesort",  # stable sort (nice when ties)
     )
 
-    # Keep only the best item per day (not per scene/tile/band)
-    # Group by date and keep the first (best) item for each day
-    df = df.drop_duplicates(
-        subset=["date"],
-        keep="first"
-    )
+    # Keep only the best item per day, but keep all bands from that item
+    # Get the best item_id for each date (first unique item_id after sorting)
+    best_items = df.drop_duplicates(subset=["date"], keep="first")[["date", "item_id"]].set_index("date")
+    best_item_dict = best_items["item_id"].to_dict()
+    
+    # Keep all rows where item_id matches the best item for that date
+    df = df[df.apply(lambda row: row["item_id"] == best_item_dict[row["date"]], axis=1)]
 
     # Drop temporary columns
     df = df.drop(columns=["processing", "date"])
+
+    # Sort by datetime, then by band (B02, B03, B04)
+    df = df.sort_values(by=["datetime", "asset_key"], ascending=[True, True])
 
     # Optional: enforce exact output column order with month as 2nd column
     csv_cols = [
@@ -193,6 +197,8 @@ if not df2024.empty:
 dfs_to_concat = [df for df in [df2022, df2023, df2024] if not df.empty]
 if dfs_to_concat:
     df = pd.concat(dfs_to_concat, ignore_index=True)
+    # Sort by datetime, then by band (B02, B03, B04)
+    df = df.sort_values(by=["datetime", "asset_key"], ascending=[True, True])
 else:
     print("\nWARNING: No data found for any year!")
     df = pd.DataFrame()
@@ -214,8 +220,9 @@ csv_cols = [
     "href_signed",
 ]
 
-# Create output directory if it doesn't exist
-output_dir = "./output"
+# Use output subdirectory in script directory
+script_dir = os.path.dirname(os.path.abspath(__file__))
+output_dir = os.path.join(script_dir, "output")
 os.makedirs(output_dir, exist_ok=True)
 
 if df.empty:
