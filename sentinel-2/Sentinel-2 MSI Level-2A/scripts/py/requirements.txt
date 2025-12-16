@@ -5,3 +5,5 @@ pyproj>=3.6
 numpy>=1.26
 pandas>=2.0
 
+# to generate the calendar view
+matplotlib
