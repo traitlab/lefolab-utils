@@ -49,7 +49,7 @@ fig, axes = plt.subplots(len(years), 1, figsize=(16, 4 * len(years)))
 if len(years) == 1:
     axes = [axes]
 
-fig.suptitle("Sentinel-2 Level-2A Assets Availability Calendar\n(Apr-Oct only)", 
+fig.suptitle("Sentinel-2 Level-2A Assets Availability Calendar - Scotty Creek\nBands: R(B02), G(B03), B(B04), NIR(B08) | Apr-Oct only", 
              fontsize=16, fontweight='bold', y=0.995)
 
 for idx, year in enumerate(years):
@@ -72,8 +72,8 @@ for idx, year in enumerate(years):
     ax.set_ylim(-1.0, len(months) + 0.5)  # Add more padding at top (white band before April)
     ax.set_yticks(range(len(months)))
     ax.set_yticklabels(month_names)
-    ax.set_xticks(range(1, 32, 5))
-    ax.set_xticklabels(range(1, 32, 5))
+    ax.set_xticks([1, 7, 14, 21, 28])
+    ax.set_xticklabels([1, 7, 14, 21, 28])
     ax.set_xlabel("Day of Month", fontsize=10)
     ax.set_title(f"{year}", fontsize=12, fontweight='bold')
     ax.grid(True, alpha=0.3, linestyle='--')
