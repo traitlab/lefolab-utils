@@ -24,6 +24,11 @@ from pystac_client import Client
 import planetary_computer as pc
 
 
+def is_tty():
+    """Check if stdout is a TTY (terminal)."""
+    return sys.stdout.isatty()
+
+
 def parse_args():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
@@ -67,6 +72,12 @@ def parse_args():
         type=float,
         default=0.5,
         help="Delay between downloads in seconds (default: 0.5)"
+    )
+    
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress progress output (useful for logging)"
     )
     
     return parser.parse_args()
@@ -201,7 +212,7 @@ def get_fresh_signed_url(item_id, asset_key, catalog, session_id, run_id):
         return None, error_msg
 
 
-def download_with_progress(url, output_path, session_id, run_id, item_id, asset_key):
+def download_with_progress(url, output_path, session_id, run_id, item_id, asset_key, quiet=False):
     """
     Download a file with basic progress indication.
     
@@ -212,6 +223,7 @@ def download_with_progress(url, output_path, session_id, run_id, item_id, asset_
         run_id: Debug run ID
         item_id: Item ID for logging
         asset_key: Asset key for logging
+        quiet: If True, suppress progress output
         
     Returns:
         tuple: (success: bool, file_size: int, error_msg: str)
@@ -226,15 +238,18 @@ def download_with_progress(url, output_path, session_id, run_id, item_id, asset_
         # Use urlretrieve which handles the download
         temp_path = str(output_path) + ".tmp"
         
+        # Only show progress if in TTY and not quiet
+        show_progress = is_tty() and not quiet
+        
         def reporthook(block_num, block_size, total_size):
             """Simple progress reporter"""
-            if total_size > 0:
+            if show_progress and total_size > 0:
                 downloaded = block_num * block_size
                 percent = min(100, (downloaded / total_size) * 100)
                 if block_num % 20 == 0:  # Print every 20 blocks
-                    print(f"    Progress: {percent:.1f}%", end='\r')
+                    print(f"    Progress: {percent:.1f}%", end='\r', flush=True)
         
-        urlretrieve(url, temp_path, reporthook)
+        urlretrieve(url, temp_path, reporthook if show_progress else None)
         
         # Move temp file to final location
         os.rename(temp_path, output_path)
@@ -290,7 +305,7 @@ def download_with_progress(url, output_path, session_id, run_id, item_id, asset_
                 pass
 
 
-def download_geotiffs(input_path, output_dir, bands=None, skip_existing=False, delay=0.5):
+def download_geotiffs(input_path, output_dir, bands=None, skip_existing=False, delay=0.5, quiet=False):
     """
     Download GeoTIFF files from the CSV.
     
@@ -300,6 +315,7 @@ def download_geotiffs(input_path, output_dir, bands=None, skip_existing=False, d
         bands: List of specific bands to download, or None for all
         skip_existing: If True, skip files that already exist
         delay: Seconds to wait between downloads
+        quiet: If True, suppress progress output
     """
     print(f"Reading input CSV: {input_path}")
     
@@ -385,7 +401,7 @@ def download_geotiffs(input_path, output_dir, bands=None, skip_existing=False, d
             else:
                 # Download the file using fresh URL
                 success, file_size, error_msg = download_with_progress(
-                    fresh_url, output_path, session_id, run_id, item_id, asset_key
+                    fresh_url, output_path, session_id, run_id, item_id, asset_key, quiet
                 )
                 
                 if success:
@@ -439,7 +455,8 @@ def main():
         output_dir=args.output_dir,
         bands=args.bands,
         skip_existing=args.skip_existing,
-        delay=args.delay
+        delay=args.delay,
+        quiet=args.quiet or not is_tty()
     )
 
 
