@@ -241,6 +241,9 @@ def download_with_progress(url, output_path, session_id, run_id, item_id, asset_
         # Only show progress if in TTY and not quiet
         show_progress = is_tty() and not quiet
         
+        if quiet:
+            print("  Downloading...", end='', flush=True)
+        
         def reporthook(block_num, block_size, total_size):
             """Simple progress reporter"""
             if show_progress and total_size > 0:
@@ -255,7 +258,10 @@ def download_with_progress(url, output_path, session_id, run_id, item_id, asset_
         os.rename(temp_path, output_path)
         
         file_size = os.path.getsize(output_path)
-        print(f"    ✓ Downloaded: {format_file_size(file_size)}        ")
+        if quiet:
+            print(f" ✓ Downloaded: {format_file_size(file_size)}")
+        else:
+            print(f"    ✓ Downloaded: {format_file_size(file_size)}        ")
         
         # #region agent log
         log_debug(session_id, run_id, "I", "download_geotiffs.py:download_with_progress",

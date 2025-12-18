@@ -79,7 +79,8 @@ Options:
 ```bash
 cd "/app/lefolab-utils/sentinel-2/Sentinel-2 MSI Level-2A/scripts/py"
 mkdir -p log
-nohup python3 /app/lefolab-utils/sentinel-2/Sentinel-2\ MSI\ Level-2A/scripts/py/download_geotiffs.py --skip-existing --output-dir "/data/lefolab/sentinel-2/Sentinel-2 MSI Level-2A/ScottyCreek" | tee "/app/lefolab-utils/sentinel-2/Sentinel-2 MSI Level-2A/scripts/py/log/download_geotiffs-$(date +%Y%m%dT%H%M%S).log" 2>&1 &
+LOG_FILE="log/download_geotiffs-$(date +%Y%m%dT%H%M%S).log"
+nohup python3 download_geotiffs.py --skip-existing --quiet --output-dir "/data/lefolab/sentinel-2/Sentinel-2 MSI Level-2A/ScottyCreek" > "$LOG_FILE" 2>&1 &
 echo "Process started. Log file: $LOG_FILE"
 echo "PID: $!"
 ```
