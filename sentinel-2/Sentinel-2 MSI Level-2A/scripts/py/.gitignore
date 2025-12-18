@@ -1,3 +1,8 @@
 # Ignore output folder and all its contents
+.venv/
 output/
+downloads/
+log/  
+*.log
+*.tiff
 
