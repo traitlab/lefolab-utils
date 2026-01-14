@@ -14,7 +14,7 @@ EXT="" # Extension of the orthomosaic files (tif or cog.tif)
 # Loop through each project
 for MISSION_ID in "${MISSIONS_ID[@]}"; do
     echo "Processing project: $MISSION_ID"
-    # Extract year from first 4 digits of MISSION_ID, or use $YEAR if not 20XX
+    # Extract year from first 4 digits of MISSION_ID
     YEAR_EXTRACTED=$(echo "$MISSION_ID" | grep -oE '^20[0-9]{2}')
     if [[ "$YEAR_EXTRACTED" =~ ^20[0-9]{2}$ ]]; then
         YEAR="$YEAR_EXTRACTED"
@@ -25,10 +25,10 @@ for MISSION_ID in "${MISSIONS_ID[@]}"; do
     python /app/CanopyRS/infer.py -c $CONFIG -i /mnt/nfs/conrad/labolaliberte_data/metashape/$YEAR/$MISSION_ID/${MISSION_ID}_rgb.${EXT} -o /data/$USER/CanopyRS/$YEAR/$MISSION_ID
     mkdir -p /mnt/nfs/conrad/labolaliberte_upload/_data/features/missions/$YEAR/$MISSION_ID/
     # Dynamically extract the threshold (e.g., gr0p07) from the file name
-    THRESHOLD=$(ls /data/$USER/CanopyRS/$YEAR/$MISSION_ID/4_aggregator/ | grep -oP "${MISSION_ID}_rgb_\Kgr0p[0-9]{2}(?=_infer.gpkg)")
+    THRESHOLD=$(ls /data/$USER/CanopyRS/$YEAR/$MISSION_ID/4_aggregator/ | grep -oP "${MISSION_ID}_rgb_tile_\Kgr0p[0-9]{2}(?=_infer.gpkg)")
     if [[ -z "$THRESHOLD" ]]; then
         echo "Error: Threshold value not found for $MISSION_ID. Cannot copy the file."
         continue
     fi
-    cp /data/$USER/CanopyRS/$YEAR/$MISSION_ID/4_aggregator/${MISSION_ID}_rgb_${THRESHOLD}_infer.gpkg /mnt/nfs/conrad/labolaliberte_upload/_data/features/missions/$YEAR/$MISSION_ID/
+    cp /data/$USER/CanopyRS/$YEAR/$MISSION_ID/4_aggregator/${MISSION_ID}_rgb_tile_${THRESHOLD}_infer.gpkg /mnt/nfs/conrad/labolaliberte_upload/_data/features/missions/$YEAR/$MISSION_ID/
 done
