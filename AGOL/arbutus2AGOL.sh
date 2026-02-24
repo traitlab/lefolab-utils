@@ -21,9 +21,12 @@ check_command() {
     fi
 }
 
+# Get the project root directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 # Set paths
 OUTPUT_DIR="/data/sharing/AGOL/wpt_layers/"
-CONFIG_PATH="/etc/rclone.conf"
 QUALIFIERS=("AmzFACE" "BCI" "Ducke" "Gault" "SBL" "StJoseph" "TBS" "Yasuni" "ZF2")
 AGOL_PROJECTS=("BCI" "Ducke" "TBS")
 MAX_WORKERS=24
@@ -33,16 +36,11 @@ check_command "conda activate arbutus"
 
 for QUALIFIER in "${QUALIFIERS[@]}"; do
     log_message "Processing waypoint missions for $QUALIFIER"
-    python /app/lefolab-utils/arbutus/arbutus2points.py \
+    python "$PROJECT_ROOT/arbutus/arbutus2points.py" \
         --output_dir "$OUTPUT_DIR" \
-        --config_path "$CONFIG_PATH" \
         --project_qualifier "$QUALIFIER" \
         --max_workers $MAX_WORKERS
     check_command "arbutus2points.py for $QUALIFIER"
-
-    log_message "Converting and zipping ${QUALIFIER}_wpt.gpkg"
-    python /app/lefolab-utils/AGOL/gpkg2shp.py "$OUTPUT_DIR/${QUALIFIER}_wpt.gpkg" "$OUTPUT_DIR"
-    check_command "gpkg2shp.py for $QUALIFIER"
 done
 
 conda deactivate
@@ -52,9 +50,12 @@ source /opt/miniconda3/bin/activate AGOL
 check_command "conda activate AGOL"
 
 for AGOL_PROJECT in "${AGOL_PROJECTS[@]}"; do
+    log_message "Converting and zipping ${AGOL_PROJECT}_wpt.gpkg"
+    python "$PROJECT_ROOT/AGOL/gpkg2shp.py" "$OUTPUT_DIR/${AGOL_PROJECT}_wpt.gpkg" "$OUTPUT_DIR"
+    check_command "gpkg2shp.py for $AGOL_PROJECT"
+
     log_message "Updating AGOL layer for $AGOL_PROJECT"
-    python /app/lefolab-utils/AGOL/update_AGOL.py \
-        --env_path "$HOME/GitHub/lefolab-utils/AGOL/.env" \
+    python "$PROJECT_ROOT/AGOL/update_AGOL.py" \
         --project_name "$AGOL_PROJECT" \
         --shp_path "$OUTPUT_DIR"
     check_command "update_AGOL.py for $AGOL_PROJECT"

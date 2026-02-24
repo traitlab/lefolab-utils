@@ -10,6 +10,7 @@ import sys
 from arcgis.gis import GIS
 from arcgis.features import FeatureLayerCollection
 from dotenv import load_dotenv
+from pathlib import Path
 
 # Setup logging with timestamp
 logger = logging.getLogger('update_AGOL')
@@ -31,31 +32,37 @@ logger.handlers = []
 logger.addHandler(stdout_handler)
 logger.addHandler(stderr_handler)
 
-def update_layer(env_path, project_name, shp_path):
+def update_layer(project_name, shp_path):
 	logger = logging.getLogger('update_AGOL')
-	logger.info(f"Loading environment variables from {env_path}")
-	load_dotenv(env_path)
+	
+	# Load environment variables from .env file
+	project_root = Path(__file__).parent.parent
+	logger.info(f"Loading environment variables from {project_root / '.env'}")
+	load_dotenv(dotenv_path=project_root / '.env')
 
-	proxy = {
-		'http': os.getenv("PROXY_HTTP"),
-		'https': os.getenv("PROXY_HTTPS"),
-	}
-
-	if not proxy['http'] or not proxy['https']:
-		logger.error("Proxy settings not set in environment.")
-		return
-
+	# Verify required environment variables
 	ArcGIS_username = os.getenv("AGOL_USER")
 	ArcGIS_password = os.getenv("AGOL_PASSWORD")
-	if not ArcGIS_username or not ArcGIS_password:
-		logger.error("AGOL_USER or AGOL_PASSWORD not set in environment.")
-		return
+	if not ArcGIS_username:
+		raise ValueError('AGOL_USER environment variable is not set')
+	if not ArcGIS_password:
+		raise ValueError('AGOL_PASSWORD environment variable is not set')
+
+	proxy_http = os.getenv("PROXY_HTTP")
+	proxy_https = os.getenv("PROXY_HTTPS")
+	if not proxy_http or not proxy_https:
+		logger.warning('Proxy settings not set. Proceeding without proxy.')
+		proxy = None
+	else:
+		proxy = {
+			'http': proxy_http,
+			'https': proxy_https,
+		}
 
 	env_var = f"{project_name.upper()}_ITEM_ID"
 	item_id = os.getenv(env_var)
 	if not item_id:
-		logger.error(f"Environment variable {env_var} not set.")
-		return
+		raise ValueError(f'Environment variable {env_var} is not set')
 
 	update_shp = os.path.join(shp_path, f"{project_name}_wpt_3857.zip")
 
@@ -79,12 +86,11 @@ def update_layer(env_path, project_name, shp_path):
 
 def main():
 	parser = argparse.ArgumentParser(description="Update ArcGIS Online layer with zipped shapefile.")
-	parser.add_argument('--env_path', required=True, help='Path to .env file with AGOL_USER and AGOL_PASSWORD')
 	parser.add_argument('--project_name', required=True, help='Project name')
 	parser.add_argument('--shp_path', required=True, help='Directory containing zipped shapefile')
 	args = parser.parse_args()
 
-	update_layer(args.env_path, args.project_name, args.shp_path)
+	update_layer(args.project_name, args.shp_path)
 
 if __name__ == "__main__":
 	main()
