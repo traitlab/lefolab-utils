@@ -30,9 +30,7 @@ echo "Granting read-write access to group '${TARGET_GROUP}' on '${BASE_PATH}'"
 
 # Step 1: Allow path traversal (execute only) for group
 setfacl -m g:${TARGET_GROUP}:x "/home/${OWNER}"
-if [ "$PI" != "$TARGET_GROUP" ]; then
-    setfacl -m g:${TARGET_GROUP}:x "/home/${OWNER}/projects/def-${PI}"
-fi
+
 setfacl -m g:${TARGET_GROUP}:x "$(dirname "${BASE_PATH}")" 2>/dev/null || true
 
 # Step 2: Give read + write + execute access to the target folder

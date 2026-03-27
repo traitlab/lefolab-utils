@@ -25,9 +25,7 @@ echo "Granting read-write access to '${TARGET_USER}' on '${BASE_PATH}'"
 
 # Step 1: Allow path traversal (execute only)
 setfacl -m u:${TARGET_USER}:x /home/${OWNER}
-if [ "$PI" != "$TARGET_USER" ]; then
-    setfacl -m u:${TARGET_USER}:x /home/${OWNER}/projects/def-${PI}
-fi
+
 setfacl -m u:${TARGET_USER}:x "$(dirname "${BASE_PATH}")" 2>/dev/null || true
 
 # Step 2: Give read + write + execute access to the target folder
