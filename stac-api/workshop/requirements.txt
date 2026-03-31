@@ -1,0 +1,12 @@
+# Python dependencies for the Panama workshop notebooks
+# Install before opening Jupyter (or run the install cell in each notebook):
+#   python3 -m pip install -r requirements.txt
+
+requests
+rasterio
+numpy
+matplotlib
+pystac-client
+geopandas
+pyproj
+imageio
