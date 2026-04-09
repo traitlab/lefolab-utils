@@ -1,0 +1,200 @@
+---
+title: "List COGs for collection `2024_bci`"
+output: html_notebook
+---
+
+## Requirements
+
+- **R ≥ 4.2**
+- **Packages:** `install.packages(c("rstac", "terra", "sf"))`
+- **Network:** HTTP access to `kanopia.org` (STAC API) and `lab.kanopia.org` (COG files, GeoPackage)
+- **Credentials:** Basic Auth required for COG files — set `COG_USER` / `COG_PASS` in the config chunk
+
+# List COGs for collection `2024_bci`
+
+This notebook queries the Kanopia STAC API, lists all COG assets matching the
+`2024_bci` collection and the `*bciwhole*rgb.cog.tif` pattern, then extracts a
+512x512 pixel PNG chip centred on a target tree for each flight date.
+
+```{r packages, message=FALSE, warning=FALSE}
+pkgs <- c("rstac", "terra", "sf")
+new  <- pkgs[!pkgs %in% installed.packages()[, "Package"]]
+if (length(new)) install.packages(new)
+
+library(rstac)
+library(terra)
+library(sf)
+
+cat("Packages ready.\n")
+```
+
+```{r config}
+# ── Configuration ─────────────────────────────────────────────────────────────
+STAC_API_URL  <- "https://kanopia.org/stac-fastapi-pgstac/api/v1/pgstac/"
+COLLECTION_ID <- "2024_bci"
+
+# Workshop credentials
+COG_USER <- "panama"
+COG_PASS <- "panama123"
+
+# Field datasheet GeoPackage
+GPKG_PATH         <- "https://lab.kanopia.org/share/public/2024-05-14_2024-06-11_fieldDatasheet.gpkg"
+TARGET_TREETAG    <- "6949"
+TARGET_POLYGON_ID <- 1041
+
+OUTPUT_DIR <- "bci_cog_snips"
+
+# GDAL network settings for remote reads
+Sys.setenv(
+  GDAL_HTTP_TIMEOUT            = "120",
+  GDAL_HTTP_MAX_RETRY          = "3",
+  GDAL_HTTP_RETRY_DELAY        = "5",
+  GDAL_DISABLE_READDIR_ON_OPEN = "EMPTY_DIR"
+)
+
+cat("STAC endpoint:", STAC_API_URL, "\n")
+cat("Collection   :", COLLECTION_ID, "\n")
+```
+
+```{r list-cogs}
+# ── List all bciwhole RGB COGs ────────────────────────────────────────────────
+pattern <- "\\d{8}_bciwhole_.*rgb\\.cog\\.tif"
+
+results <- stac(STAC_API_URL) |>
+  stac_search(collections = COLLECTION_ID, limit = 500) |>
+  get_request()
+
+cog_list <- list()
+for (item in results$features) {
+  for (key in names(item$assets)) {
+    href <- item$assets[[key]]$href
+    if (!is.null(href) && grepl(pattern, href)) {
+      date_str <- regmatches(href, regexpr("\\d{8}", href))
+      cog_list[[length(cog_list) + 1]] <- list(
+        item_id   = item$id,
+        asset_key = key,
+        href      = href,
+        date      = as.integer(date_str)
+      )
+    }
+  }
+}
+
+cog_list <- cog_list[order(sapply(cog_list, `[[`, "date"))]
+
+cat(sprintf("Found %d matching COG assets for collection %s\n\n",
+            length(cog_list), COLLECTION_ID))
+for (i in seq_along(cog_list)) {
+  c <- cog_list[[i]]
+  cat(sprintf("%03d: %d | %s | %s | %s\n",
+              i, c$date, c$item_id, c$asset_key, c$href))
+}
+```
+
+```{r extract-chips}
+# ── Extract 512x512 PNG chips centred on target tree ──────────────────────────
+
+add_auth <- function(url, user, pwd) {
+  # Embed Basic Auth into URL: https://user:pwd@host/path
+  sub("^(https?://)", paste0("\\1", user, ":", pwd, "@"), url)
+}
+
+# Clean output directory before writing new chips
+if (dir.exists(OUTPUT_DIR)) {
+  unlink(OUTPUT_DIR, recursive = TRUE)
+  cat(sprintf("Cleaned existing directory: %s\n", OUTPUT_DIR))
+}
+dir.create(OUTPUT_DIR, recursive = TRUE)
+
+# Load GeoPackage and find target tree point
+cat("Loading geopackage:", GPKG_PATH, "\n")
+gpkg <- sf::st_read(GPKG_PATH, quiet = TRUE)
+cat("Geopackage layer rows:", nrow(gpkg), "\n")
+
+matches <- gpkg[
+  as.character(gpkg$TreeTag) == TARGET_TREETAG &
+  !is.na(gpkg$Polygon_ID) &
+  gpkg$Polygon_ID == TARGET_POLYGON_ID, ]
+
+if (nrow(matches) == 0) {
+  stop("No matching row found for treetag/polygon_id in geopackage.")
+}
+
+geom   <- matches$geometry[[1]]
+point  <- if (sf::st_geometry_type(geom) == "POINT") geom else sf::st_centroid(geom)
+coords <- sf::st_coordinates(point)
+
+tree_x   <- coords[1]
+tree_y   <- coords[2]
+tree_crs <- sf::st_crs(gpkg)$input   # e.g. "EPSG:32617"
+
+n <- length(cog_list)
+cat(sprintf("Found point at x=%.6f, y=%.6f (CRS: %s). Processing %d COGs...\n",
+            tree_x, tree_y, tree_crs, n))
+
+for (idx in seq_along(cog_list)) {
+  c    <- cog_list[[idx]]
+  href <- c$href
+
+  if (grepl("request-access", href)) {
+    cat(sprintf("[%d/%d] skipped (request-access): %s\n", idx, n, href))
+    next
+  }
+
+  href_auth <- add_auth(href, COG_USER, COG_PASS)
+
+  # Name PNG after the COG filename (without .tif) + suffix — matches Python version
+  cog_stem <- tools::file_path_sans_ext(basename(href))   # e.g. '20240611_bciwhole_rx1rii_rgb.cog'
+  out_png  <- file.path(OUTPUT_DIR, paste0(cog_stem, "_512x512_chip.png"))
+
+  # Open raster — reads metadata only at this point (fast)
+  r <- tryCatch(
+    terra::rast(paste0("/vsicurl/", href_auth)),
+    error = function(e) {
+      cat(sprintf("[%d/%d] error opening: %s\n", idx, n, href)); NULL
+    }
+  )
+  if (is.null(r)) next
+
+  # Reproject tree point to COG CRS using terra
+  pt <- terra::vect(matrix(c(tree_x, tree_y), ncol = 2), crs = tree_crs)
+  pt <- terra::project(pt, terra::crs(r))
+  xp <- terra::crds(pt)[1, 1]
+  yp <- terra::crds(pt)[1, 2]
+
+  # Build 512x512 px window extent — src.index() returns (row, col), careful with order
+  rx <- terra::res(r)[1]
+  ry <- terra::res(r)[2]
+
+  rext    <- terra::ext(r)
+  xmin_w  <- max(xp - 256 * rx, terra::xmin(rext))
+  xmax_w  <- min(xp + 256 * rx, terra::xmax(rext))
+  ymin_w  <- max(yp - 256 * ry, terra::ymin(rext))
+  ymax_w  <- min(yp + 256 * ry, terra::ymax(rext))
+
+  if (xmin_w >= xmax_w || ymin_w >= ymax_w) {
+    cat(sprintf("[%d/%d] skipped (window out of bounds): %s\n", idx, n, cog_stem))
+    next
+  }
+
+  win  <- terra::ext(xmin_w, xmax_w, ymin_w, ymax_w)
+
+  # Read only this small window — COG magic: ~800 KB from a 50 GB file
+  nlyr_use <- min(terra::nlyr(r), 3L)
+  chip     <- terra::crop(r[[seq_len(nlyr_use)]], win)
+
+  # Write PNG via grDevices — no extra packages required
+  png(out_png, width = ncol(chip), height = nrow(chip))
+  par(mar = c(0, 0, 0, 0))
+  terra::plotRGB(chip, r = 1, g = 2, b = 3, stretch = "lin", axes = FALSE)
+  dev.off()
+
+  cat(sprintf("[%d/%d] wrote %s\n", idx, n, out_png))
+}
+
+cat(sprintf("Done: extracted PNGs in %s\n", OUTPUT_DIR))
+```
+
+## Notes
+- If no entries are found, ensure the `COLLECTION_ID` exists and the API endpoint is available.
+- You can customize `limit`, the regex pattern, or the chip size (currently 512x512).

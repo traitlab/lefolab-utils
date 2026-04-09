@@ -1,0 +1,328 @@
+---
+title: "BCI COG Workshop"
+output: html_notebook
+---
+
+## Requirements
+
+- **R ≥ 4.2**
+- **Packages:** `install.packages(c("rstac", "terra", "sf"))`
+- **Network:** HTTP access to `kanopia.org` (STAC API) and `lab.kanopia.org` (COG files, GeoPackage)
+- **Credentials:** Basic Auth required for COG files — set `COG_USER` / `COG_PASS` in the config chunk
+
+# BCI COG Workshop
+
+This notebook demonstrates:
+1. Querying the Kanopia **STAC API** to find BCI drone imagery by date
+2. Reading a tiny window from a **50 GB+ Cloud Optimized GeoTIFF** in ~2 seconds
+3. Computing **RGB vegetation indices** (GLI, VARI, GCC) to detect dead trees
+4. Comparing the **same tree across two dates** to see change over time
+
+---
+**Run this notebook top-to-bottom.** Each chunk builds on the previous one.
+
+```{r packages, message=FALSE, warning=FALSE}
+pkgs <- c("rstac", "terra", "sf")
+new  <- pkgs[!pkgs %in% installed.packages()[, "Package"]]
+if (length(new)) install.packages(new)
+
+library(rstac)
+library(terra)
+library(sf)
+
+cat("Packages ready.\n")
+```
+
+```{r config}
+# ── Configuration ────────────────────────────────────────────────────────────
+STAC_API_URL  <- "https://kanopia.org/stac-fastapi-pgstac/api/v1/pgstac/"
+COLLECTION_ID <- "2024_bci"
+
+# Workshop credentials
+COG_USER <- "panama"
+COG_PASS <- "panama123"
+
+# Dead tree to track (from field datasheet — tag surveyed as dead/dying in 2024)
+TARGET_TREETAG    <- "6949"
+TARGET_POLYGON_ID <- 1041
+
+# Path to field datasheet GeoPackage
+GPKG_PATH <- Sys.getenv(
+  "GPKG_PATH",
+  "https://lab.kanopia.org/share/public/2024-05-14_2024-06-11_fieldDatasheet.gpkg"
+)
+
+# GDAL network settings for remote reads
+Sys.setenv(
+  GDAL_HTTP_TIMEOUT            = "120",
+  GDAL_HTTP_MAX_RETRY          = "3",
+  GDAL_HTTP_RETRY_DELAY        = "5",
+  GDAL_DISABLE_READDIR_ON_OPEN = "EMPTY_DIR"
+)
+
+cat("STAC endpoint  :", STAC_API_URL,   "\n")
+cat("Collection     :", COLLECTION_ID,  "\n")
+cat("Target tree tag:", TARGET_TREETAG, "\n")
+cat("GeoPackage path:", GPKG_PATH,      "\n")
+```
+
+```{r helpers}
+# ── Helper functions ──────────────────────────────────────────────────────────
+
+add_auth <- function(url, user, pwd) {
+  # Embed Basic Auth into URL: https://user:pwd@host/path
+  sub("^(https?://)", paste0("\\1", user, ":", pwd, "@"), url)
+}
+
+read_rgb_chip <- function(href, x, y, user, pwd, src_crs = "EPSG:4326", chip_px = 512L) {
+  # Read a chip_px x chip_px RGB window from a COG centred on (x, y) in src_crs.
+  # Only the small window is downloaded — the full file stays on the server.
+  url <- add_auth(href, user, pwd)
+  r   <- terra::rast(paste0("/vsicurl/", url))   # reads metadata only (fast)
+
+  # Reproject point to COG CRS using terra
+  pt <- terra::vect(matrix(c(x, y), ncol = 2), crs = src_crs)
+  pt <- terra::project(pt, terra::crs(r))
+  xp <- terra::crds(pt)[1, 1]
+  yp <- terra::crds(pt)[1, 2]
+
+  # Window extent: chip_px / 2 pixels on each side
+  rx <- terra::res(r)[1]
+  ry <- terra::res(r)[2]
+  win <- terra::ext(
+    xp - chip_px / 2 * rx, xp + chip_px / 2 * rx,
+    yp - chip_px / 2 * ry, yp + chip_px / 2 * ry
+  )
+
+  terra::crop(r, win)   # only this window is fetched from the server
+}
+
+fmt_date <- function(d) {
+  d <- as.character(d)
+  paste0(substr(d, 1, 4), "-", substr(d, 5, 6), "-", substr(d, 7, 8))
+}
+
+rdylgn <- colorRampPalette(c("#d73027", "#fee08b", "#1a9850"))(256)
+
+cat("Helper functions defined.\n")
+```
+
+---
+## Step 1 — Query the STAC API
+
+We ask the Kanopia STAC API: *"give me all RGB drone mosaics from the `2024_bci` collection"*.
+
+The response is a list of items — each item is one flight date with its COG file URL.
+
+```{r stac-query}
+# ── Step 1: Query STAC API ────────────────────────────────────────────────────
+pattern <- "\\d{8}_bciwhole_.*rgb\\.cog\\.tif"
+
+results <- stac(STAC_API_URL) |>
+  stac_search(collections = COLLECTION_ID, limit = 500) |>
+  get_request()
+
+cog_list <- list()
+for (item in results$features) {
+  for (key in names(item$assets)) {
+    href <- item$assets[[key]]$href
+    if (!is.null(href) && grepl(pattern, href) && grepl("/share/1", href)) {
+      date_str <- regmatches(href, regexpr("\\d{8}", href))
+      cog_list[[length(cog_list) + 1]] <- list(
+        date    = as.integer(date_str),
+        href    = href,
+        item_id = item$id
+      )
+    }
+  }
+}
+
+cog_list <- cog_list[order(sapply(cog_list, `[[`, "date"))]
+
+cat(sprintf("Found %d BCI whole-island RGB COG assets:\n\n", length(cog_list)))
+for (c in cog_list) {
+  cat(sprintf("  %s  ->  %s\n", fmt_date(c$date), basename(c$href)))
+}
+```
+
+---
+## Step 2 — Pick a dead tree from the field datasheet
+
+The field GeoPackage contains GPS points from the 2024 BCI tree survey.
+We target **tree tag 6949**, which was recorded as dead/dying.
+
+```{r geopkg}
+# ── Step 2: Load GeoPackage, extract tree coordinates ────────────────────────
+gpkg <- sf::st_read(GPKG_PATH, quiet = TRUE)
+
+matches <- gpkg[
+  as.character(gpkg$TreeTag) == TARGET_TREETAG &
+  !is.na(gpkg$Polygon_ID) &
+  gpkg$Polygon_ID == TARGET_POLYGON_ID, ]
+
+if (nrow(matches) == 0) {
+  stop(sprintf("Tree %s / Polygon %s not found in GeoPackage.",
+               TARGET_TREETAG, TARGET_POLYGON_ID))
+}
+
+geom   <- matches$geometry[[1]]
+point  <- if (sf::st_geometry_type(geom) == "POINT") geom else sf::st_centroid(geom)
+coords <- sf::st_coordinates(point)
+
+TREE_X   <- coords[1]
+TREE_Y   <- coords[2]
+TREE_CRS <- sf::st_crs(gpkg)$input   # e.g. "EPSG:32617"
+
+cat("Target tree tag :", TARGET_TREETAG,    "\n")
+cat("Polygon ID      :", TARGET_POLYGON_ID, "\n")
+cat("GeoPackage CRS  :", TREE_CRS,          "\n")
+cat(sprintf("Coordinates     : x=%.2f, y=%.2f\n", TREE_X, TREE_Y))
+cat(sprintf("\nWe will read a 512x512 px chip from each of the %d COG dates.\n",
+            length(cog_list)))
+```
+
+---
+## Step 3 — Read one chip (the COG magic moment)
+
+The BCI whole-island RGB COG is **50+ GB**.
+We read only the **512x512 pixel window** around our target tree — about **800 KB**.
+
+No download. No waiting. The file stays on the server.
+
+```{r read-chip}
+# ── Step 3: Read one RGB chip ─────────────────────────────────────────────────
+target_cog <- cog_list[[1]]    # first date — change index to see other dates
+label      <- fmt_date(target_cog$date)
+
+cat(sprintf("Reading chip from: %s\n", label))
+cat(sprintf("File: %s\n", basename(target_cog$href)))
+cat("Fetching from server (only ~800 KB, not the full 50 GB file) ...\n")
+
+# src_crs matches GeoPackage CRS — reprojected directly to COG CRS inside the function
+chip <- read_rgb_chip(
+  target_cog$href, TREE_X, TREE_Y, COG_USER, COG_PASS,
+  src_crs = TREE_CRS
+)
+
+terra::plotRGB(chip, r = 1, g = 2, b = 3, stretch = "lin",
+               main = paste0("RGB chip - Tree ", TARGET_TREETAG, " - ", label))
+
+cat(sprintf("\nDone. Chip size: %dx%d px - read in seconds from a 50 GB file.\n",
+            ncol(chip), nrow(chip)))
+```
+
+---
+## Step 4 — Compute RGB vegetation indices
+
+These three indices use only **Red, Green, Blue** bands — perfect for drone RGB data.
+
+| Index | Formula | What it measures |
+|-------|---------|------------------|
+| **GLI** — Green Leaf Index | `(2G - R - B) / (2G + R + B)` | Greenness; high = healthy |
+| **VARI** — Visible Atmospherically Resistant Index | `(G - R) / (G + R - B)` | Robust greenness, less sensitive to haze |
+| **GCC** — Green Chromatic Coordinate | `G / (R + G + B)` | Canopy phenology; tracks seasonal greenup/senescence |
+
+**Dead trees → low GLI, low VARI, low GCC** (red in the RdYlGn palette).
+
+```{r compute-indices}
+# ── Step 4: Compute GLI, VARI, GCC directly on terra SpatRasters ─────────────
+eps <- 1e-6
+R   <- chip[[1]]; G <- chip[[2]]; B <- chip[[3]]
+
+GLI  <- (2*G - R - B) / (2*G + R + B + eps)
+VARI <- clamp((G - R) / (G + R - B + eps), -1.5, 1.5)
+GCC  <- G / (R + G + B + eps)
+
+cat(sprintf("GLI  range: [%.3f, %.3f]  (healthy forest ~+0.1 to +0.4)\n",
+            global(GLI,  "min", na.rm = TRUE)[[1]],
+            global(GLI,  "max", na.rm = TRUE)[[1]]))
+cat(sprintf("VARI range: [%.3f, %.3f]  (healthy ~0.0 to +0.5)\n",
+            global(VARI, "min", na.rm = TRUE)[[1]],
+            global(VARI, "max", na.rm = TRUE)[[1]]))
+cat(sprintf("GCC  range: [%.3f, %.3f]  (healthy ~0.35 to 0.45)\n",
+            global(GCC,  "min", na.rm = TRUE)[[1]],
+            global(GCC,  "max", na.rm = TRUE)[[1]]))
+```
+
+```{r plot-indices, fig.width=20, fig.height=5}
+# ── Step 5: Side-by-side visualization ───────────────────────────────────────
+par(mfrow = c(1, 4), mar = c(1, 1, 3, 2))
+
+terra::plotRGB(chip, r = 1, g = 2, b = 3, stretch = "lin", axes = FALSE,
+               main = paste0("RGB\n", label))
+
+plot(GLI,  col = rdylgn, range = c(-0.5, 0.5),  axes = FALSE, legend = TRUE,
+     main = "GLI\n(Green Leaf Index)")
+plot(VARI, col = rdylgn, range = c(-0.5, 0.8),  axes = FALSE, legend = TRUE,
+     main = "VARI\n(Atmospherically Resistant)")
+plot(GCC,  col = rdylgn, range = c(0.28, 0.45), axes = FALSE, legend = TRUE,
+     main = "GCC\n(Green Chromatic Coord.)")
+
+mtext(
+  paste0("BCI - Tree ", TARGET_TREETAG, " - ", label,
+         "\nRed = low greenness (dead/stressed)   Green = healthy canopy"),
+  outer = TRUE, line = -1.5, cex = 0.9, font = 2
+)
+```
+
+---
+## Step 6 — Track the dead tree across two dates
+
+We now read the **same chip** from two dates and compare GLI maps.
+
+**Healthy canopy** stays green (high GLI).
+**Dead or dying tree** turns red (low GLI) between the two dates.
+
+```{r twodate, fig.width=12, fig.height=12}
+# ── Step 6: Two-date GLI comparison ──────────────────────────────────────────
+date_early <- cog_list[[1]]
+date_late  <- cog_list[[length(cog_list)]]
+
+cat(sprintf("Early date : %s\n", fmt_date(date_early$date)))
+cat(sprintf("Late  date : %s\n", fmt_date(date_late$date)))
+cat("Reading both chips...\n")
+
+chip_e <- read_rgb_chip(date_early$href, TREE_X, TREE_Y, COG_USER, COG_PASS,
+                        src_crs = TREE_CRS)
+chip_l <- read_rgb_chip(date_late$href,  TREE_X, TREE_Y, COG_USER, COG_PASS,
+                        src_crs = TREE_CRS)
+
+gli_e <- (2*chip_e[[2]] - chip_e[[1]] - chip_e[[3]]) /
+         (2*chip_e[[2]] + chip_e[[1]] + chip_e[[3]] + 1e-6)
+gli_l <- (2*chip_l[[2]] - chip_l[[1]] - chip_l[[3]]) /
+         (2*chip_l[[2]] + chip_l[[1]] + chip_l[[3]] + 1e-6)
+
+par(mfrow = c(2, 2), mar = c(1, 1, 3, 2))
+
+terra::plotRGB(chip_e, r = 1, g = 2, b = 3, stretch = "lin", axes = FALSE,
+               main = paste0("RGB - ", fmt_date(date_early$date)))
+terra::plotRGB(chip_l, r = 1, g = 2, b = 3, stretch = "lin", axes = FALSE,
+               main = paste0("RGB - ", fmt_date(date_late$date)))
+
+plot(gli_e, col = rdylgn, range = c(-0.5, 0.5), axes = FALSE, legend = TRUE,
+     main = paste0("GLI - ", fmt_date(date_early$date)))
+plot(gli_l, col = rdylgn, range = c(-0.5, 0.5), axes = FALSE, legend = TRUE,
+     main = paste0("GLI - ", fmt_date(date_late$date)))
+
+mtext(
+  paste0("Tree ", TARGET_TREETAG, " - Temporal Change in GLI\n",
+         "Green = healthy   Red = dead/stressed"),
+  outer = TRUE, line = -1.5, cex = 0.9, font = 2
+)
+```
+
+---
+## What just happened?
+
+| Step | What we did | Data transferred |
+|------|-------------|------------------|
+| STAC query | Found all BCI RGB COGs for 2024 | ~15 KB |
+| COG chip read (x2) | Read 512x512 px window centred on tree | ~800 KB each |
+| Index computation | GLI, VARI, GCC | 0 bytes (local math) |
+
+**The BCI whole-island RGB COG is 50+ GB.**
+We transferred less than 2 MB total — about **0.004% of the file**.
+
+This is the power of **Cloud Optimized GeoTIFF + STAC**:
+- **STAC** tells you *which* file and *where* to find it
+- **COG** lets you read *only the part you need*, from anywhere, with any tool

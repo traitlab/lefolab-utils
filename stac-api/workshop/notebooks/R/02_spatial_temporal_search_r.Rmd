@@ -1,0 +1,206 @@
+---
+title: "STAC Search by Spatial & Temporal Extent"
+output: html_notebook
+---
+
+## Requirements
+
+- **R ≥ 4.2**
+- **Packages:** `install.packages(c("rstac", "dplyr", "tidyr", "ggplot2"))`
+- **Network:** HTTP access to `kanopia.org` (STAC API)
+
+# STAC Search by Spatial & Temporal Extent
+
+Query the Kanopia STAC API using only a **bounding box** and a **date range** — no collection filter.
+
+Use case: *find all RGB, DSM, and LAZ assets over global tropical forests between 2019 and 2025.*
+
+---
+**Steps**
+1. Search the STAC API — bbox + datetime, no collection filter
+2. Filter to RGB / DSM / COPC LAZ (exclude raw) and summarise by project
+
+```{r packages, message=FALSE, warning=FALSE}
+pkgs <- c("rstac", "dplyr", "tidyr", "ggplot2")
+new  <- pkgs[!pkgs %in% installed.packages()[, "Package"]]
+if (length(new)) install.packages(new)
+
+library(rstac)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Null-coalescing operator
+`%||%` <- function(a, b) if (is.null(a)) b else a
+
+cat("Packages ready.\n")
+```
+
+```{r config}
+# ── Configuration ─────────────────────────────────────────────────────────────
+STAC_API_URL <- "https://kanopia.org/stac-fastapi-pgstac/api/v1/pgstac/"
+
+# Workshop credentials
+COG_USER <- "panama"
+COG_PASS <- "panama123"
+
+# Spatial extent: global tropical belt (Tropic of Cancer to Tropic of Capricorn)
+# Covers all tropical forests worldwide: Amazon, Congo, SE Asia, Central America, etc.
+BBOX <- c(-180, -23.5, 180, 23.5)
+
+# Temporal extent: ISO-8601 interval
+DATETIME <- "2019-01-01T00:00:00Z/2025-12-31T23:59:59Z"
+
+MAX_ITEMS <- 9999L
+
+cat(sprintf("STAC endpoint : %s\n", STAC_API_URL))
+cat(sprintf("Bounding box  : [%s]  (global tropical belt)\n",
+            paste(BBOX, collapse = ", ")))
+cat(sprintf("Date range    : %s\n", DATETIME))
+```
+
+---
+## Step 1 — Search by spatial + temporal extent
+
+We pass `bbox` and `datetime` to the STAC search — **no `collections` filter**.
+The API returns every item whose spatial footprint intersects the bounding box
+and whose acquisition date falls within the date range.
+
+```{r stac-search}
+# ── Step 1: STAC search — bbox + datetime, no collection filter ───────────────
+results <- stac(STAC_API_URL) |>
+  stac_search(
+    bbox     = BBOX,
+    datetime = DATETIME,
+    limit    = MAX_ITEMS
+  ) |>
+  get_request()
+
+items <- results$features
+cat(sprintf("Found %d item(s) matching the spatial + temporal extent.\n", length(items)))
+```
+
+---
+## Step 2 — Summary by project (collection)
+
+Filter to **RGB**, **DSM**, and **LAZ** assets (exclude raw).
+Count assets per collection, with a grand total row.
+
+```{r filter-assets}
+# ── Step 2: Filter assets and summarise by project ────────────────────────────
+include_pat <- "rgb.*\\.cog\\.tif|dsm.*\\.cog\\.tif|copc.*\\.laz"
+exclude_pat <- "raw|preview"
+
+assets_rows <- list()
+
+for (item in items) {
+  coll   <- item$collection %||% item$properties[["collection"]] %||% NA_character_
+  dt_raw <- item$properties[["datetime"]] %||%
+            item$properties[["start_datetime"]] %||% NA_character_
+  dt     <- if (!is.na(dt_raw %||% NA)) substr(dt_raw, 1, 10) else NA_character_
+
+  item_assets <- item$assets
+  if (!is.list(item_assets)) next
+
+  for (key in names(item_assets)) {
+    href  <- item_assets[[key]]$href %||% ""
+    label <- paste(key, href)
+
+    if (!grepl(include_pat, label, ignore.case = TRUE)) next
+    if ( grepl(exclude_pat, label, ignore.case = TRUE)) next
+
+    asset_type <- dplyr::case_when(
+      grepl("copc|\\.laz$", label, ignore.case = TRUE) ~ "LAZ",
+      grepl("dsm",          label, ignore.case = TRUE) ~ "DSM",
+      TRUE                                              ~ "RGB"
+    )
+
+    assets_rows[[length(assets_rows) + 1]] <- data.frame(
+      collection = coll,
+      datetime   = dt,
+      asset_type = asset_type,
+      stringsAsFactors = FALSE
+    )
+  }
+}
+
+if (length(assets_rows) == 0) {
+  cat("No assets found — adjust BBOX or DATETIME and re-run.\n")
+} else {
+  assets_df <- dplyr::bind_rows(assets_rows)
+
+  summary_tbl <- assets_df |>
+    dplyr::count(collection, asset_type) |>
+    tidyr::pivot_wider(
+      names_from  = asset_type,
+      values_from = n,
+      values_fill = 0L
+    ) |>
+    dplyr::mutate(
+      RGB   = dplyr::coalesce(RGB,   0L),
+      DSM   = dplyr::coalesce(DSM,   0L),
+      LAZ   = dplyr::coalesce(LAZ,   0L),
+      Total = RGB + DSM + LAZ
+    ) |>
+    dplyr::arrange(dplyr::desc(Total))
+
+  date_range <- assets_df |>
+    dplyr::group_by(collection) |>
+    dplyr::summarise(
+      first_date = min(datetime, na.rm = TRUE),
+      last_date  = max(datetime, na.rm = TRUE),
+      .groups    = "drop"
+    )
+
+  summary_tbl <- dplyr::left_join(summary_tbl, date_range, by = "collection")
+
+  # Grand total row
+  total_row <- summary_tbl |>
+    dplyr::summarise(
+      collection = "TOTAL",
+      RGB   = sum(RGB),
+      DSM   = sum(DSM),
+      LAZ   = sum(LAZ),
+      Total = sum(Total),
+      first_date = min(first_date, na.rm = TRUE),
+      last_date  = max(last_date,  na.rm = TRUE)
+    )
+
+  cat(strrep("=", 60), "\n")
+  cat(sprintf("  Assets: %d  |  Collections: %d\n",
+              nrow(assets_df), dplyr::n_distinct(assets_df$collection)))
+  cat(strrep("=", 60), "\n")
+  print(dplyr::bind_rows(summary_tbl, total_row), n = Inf)
+}
+```
+
+```{r bar-chart, fig.width=12, fig.height=5}
+# ── Bar chart ─────────────────────────────────────────────────────────────────
+if (exists("summary_tbl") && nrow(summary_tbl) > 0) {
+  plot_df <- summary_tbl |>
+    dplyr::select(collection, RGB, DSM, LAZ) |>
+    tidyr::pivot_longer(
+      cols      = c(RGB, DSM, LAZ),
+      names_to  = "type",
+      values_to = "n"
+    ) |>
+    dplyr::mutate(type = factor(type, levels = c("RGB", "DSM", "LAZ")))
+
+  ggplot(plot_df, aes(x = collection, y = n, fill = type)) +
+    geom_col(position = "dodge", width = 0.75) +
+    scale_fill_manual(
+      values = c(RGB = "#4caf50", DSM = "#2196f3", LAZ = "#9c27b0")
+    ) +
+    labs(
+      title = paste0(
+        "Geospatial assets by project - global tropical belt (+-23.5 deg)\n",
+        substr(DATETIME, 1, 10), " -> ", substr(DATETIME, 22, 31)
+      ),
+      x    = "Collection (project)",
+      y    = "Number of assets",
+      fill = "Asset type"
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+```
