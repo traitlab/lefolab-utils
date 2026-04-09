@@ -1,5 +1,5 @@
 ---
-title: "List COGs for collection `2024_bci`"
+title: "List COGs for collection `2024_bci` — R"
 output: html_notebook
 ---
 
@@ -10,11 +10,9 @@ output: html_notebook
 - **Network:** HTTP access to `kanopia.org` (STAC API) and `lab.kanopia.org` (COG files, GeoPackage)
 - **Credentials:** Basic Auth required for COG files — set `COG_USER` / `COG_PASS` in the config chunk
 
-# List COGs for collection `2024_bci`
+# List COGs for collection `2024_bci` — R
 
-This notebook queries the Kanopia STAC API, lists all COG assets matching the
-`2024_bci` collection and the `*bciwhole*rgb.cog.tif` pattern, then extracts a
-512x512 pixel PNG chip centred on a target tree for each flight date.
+This notebook queries the Kanopia STAC API, lists all COG assets matching the `2024_bci` collection and the `*bciwhole*rgb.cog.tif` pattern, then extracts a 512×512 pixel PNG chip centred on a target tree for each flight date.
 
 ```{r packages, message=FALSE, warning=FALSE}
 pkgs <- c("rstac", "terra", "sf")

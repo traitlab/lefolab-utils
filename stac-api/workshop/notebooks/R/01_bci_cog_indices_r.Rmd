@@ -1,5 +1,5 @@
 ---
-title: "BCI COG Workshop"
+title: "BCI COG Workshop — R"
 output: html_notebook
 ---
 
@@ -10,7 +10,7 @@ output: html_notebook
 - **Network:** HTTP access to `kanopia.org` (STAC API) and `lab.kanopia.org` (COG files, GeoPackage)
 - **Credentials:** Basic Auth required for COG files — set `COG_USER` / `COG_PASS` in the config chunk
 
-# BCI COG Workshop
+# BCI COG Workshop — R
 
 This notebook demonstrates:
 1. Querying the Kanopia **STAC API** to find BCI drone imagery by date

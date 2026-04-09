@@ -1,5 +1,5 @@
 ---
-title: "STAC Search by Spatial & Temporal Extent"
+title: "STAC Search by Spatial & Temporal Extent — R"
 output: html_notebook
 ---
 
@@ -9,7 +9,7 @@ output: html_notebook
 - **Packages:** `install.packages(c("rstac", "dplyr", "tidyr", "ggplot2"))`
 - **Network:** HTTP access to `kanopia.org` (STAC API)
 
-# STAC Search by Spatial & Temporal Extent
+# STAC Search by Spatial & Temporal Extent — R
 
 Query the Kanopia STAC API using only a **bounding box** and a **date range** — no collection filter.
 
