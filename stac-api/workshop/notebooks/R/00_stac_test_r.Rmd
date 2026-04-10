@@ -1,0 +1,184 @@
+---
+title: "STAC Test — Panama 2024–2025 — R"
+output: html_notebook
+---
+
+## Requirements
+
+- **R ≥ 4.2**
+- **Packages:** `install.packages(c("rstac", "terra", "httr"))`
+- **Network:** HTTP access to `kanopia.org` (STAC API) and `lab.kanopia.org` (COG files)
+- **Credentials:** Basic Auth required for COG files — `COG_USER` / `COG_PASS` set in the config cell
+
+# STAC Test — Panama 2024–2025 — R
+
+End-to-end connectivity test for the Kanopia STAC API:
+
+1. Ping the STAC root — confirm the API is reachable
+2. Search for all items over **Panama** between **2024-01-01 and 2025-12-31**
+3. List all **RGB COG** assets found
+4. Render a low-resolution **preview** of the first RGB COG
+
+```{r packages, message=FALSE, warning=FALSE}
+# ── Install packages (safe to re-run) ─────────────────────────────────────────
+pkgs <- c("rstac", "terra", "httr")
+new  <- pkgs[!pkgs %in% installed.packages()[, "Package"]]
+if (length(new)) install.packages(new)
+
+library(rstac)
+library(terra)
+library(httr)
+
+`%||%` <- function(a, b) if (is.null(a)) b else a
+
+cat("Packages ready.\n")
+```
+
+```{r config}
+# ── Configuration ─────────────────────────────────────────────────────────────
+STAC_API_URL <- "https://kanopia.org/stac-fastapi-pgstac/api/v1/pgstac/"
+
+# Workshop credentials
+COG_USER <- "panama"
+COG_PASS <- "panama123"
+
+# Spatial extent: Panama [west, south, east, north]
+BBOX <- c(-83.05, 7.20, -77.15, 9.65)
+
+# Temporal extent
+DATETIME <- "2024-01-01T00:00:00Z/2025-12-31T23:59:59Z"
+
+# GDAL network settings for remote COG reads
+Sys.setenv(
+  GDAL_HTTP_TIMEOUT            = "120",
+  GDAL_HTTP_MAX_RETRY          = "3",
+  GDAL_HTTP_RETRY_DELAY        = "5",
+  GDAL_DISABLE_READDIR_ON_OPEN = "EMPTY_DIR"
+)
+
+add_auth <- function(url, user, pwd) {
+  if (grepl("@", sub("^https?://", "", url))) return(url)
+  sub("://", paste0("://", user, ":", pwd, "@"), url)
+}
+
+cat(sprintf("STAC endpoint : %s\n", STAC_API_URL))
+cat(sprintf("Bounding box  : [%s]  (Panama)\n", paste(BBOX, collapse = ", ")))
+cat(sprintf("Date range    : %s\n", DATETIME))
+```
+
+---
+## Step 1 — Ping the STAC API
+
+A simple GET to the root URL confirms the API is reachable and returns its title and version.
+
+```{r ping}
+# ── Step 1: Ping STAC root ────────────────────────────────────────────────────
+resp    <- httr::GET(STAC_API_URL, httr::timeout(15))
+httr::stop_for_status(resp)
+catalog <- httr::content(resp, as = "parsed", type = "application/json")
+
+cat(sprintf("  Title   : %s\n", catalog$title        %||% "?"))
+cat(sprintf("  Version : %s\n", catalog$stac_version %||% "?"))
+cat(sprintf("  ID      : %s\n", catalog$id           %||% "?"))
+cat("\nSTAC API is reachable.\n")
+```
+
+---
+## Step 2 — Search over Panama (2024–2025)
+
+Search the STAC API with a **bounding box** covering Panama and a **date range** of 2024–2025.
+No collection filter is applied — all matching items across every project are returned.
+
+```{r stac-search}
+# ── Step 2: Search Panama + 2024-2025 ─────────────────────────────────────────
+results <- stac(STAC_API_URL, force_version = "1.0.0") |>
+  stac_search(
+    bbox     = BBOX,
+    datetime = DATETIME,
+    limit    = 500L
+  ) |>
+  get_request()
+
+items <- results$features
+cat(sprintf("Found %d item(s) over Panama (2024-2025).\n", length(items)))
+```
+
+---
+## Step 3 — List RGB COG assets
+
+Filter assets to **optimised RGB COGs** (`.cog.tif`, excluding `raw` and `lowres` variants).
+
+```{r list-assets}
+# ── Step 3: List RGB COG assets ───────────────────────────────────────────────
+rgb_pat     <- "rgb.*\\.cog\\.tif"
+exclude_pat <- "raw|lowres|preview"
+
+rgb_assets <- list()
+
+for (item in items) {
+  coll   <- item$collection %||% NA_character_
+  dt_raw <- item$properties[["datetime"]] %||%
+            item$properties[["start_datetime"]] %||% NA_character_
+  dt     <- if (!is.na(dt_raw %||% NA)) substr(dt_raw, 1, 10) else NA_character_
+
+  item_assets <- item$assets
+  if (!is.list(item_assets)) next
+
+  for (key in names(item_assets)) {
+    href <- item_assets[[key]]$href %||% ""
+    if ( grepl(rgb_pat,    href, ignore.case = TRUE) &&
+        !grepl(exclude_pat, href, ignore.case = TRUE) &&
+         grepl("/share/1",  href, fixed = TRUE)) {
+      rgb_assets[[length(rgb_assets) + 1]] <- list(
+        collection = coll,
+        date       = dt,
+        key        = key,
+        href       = href
+      )
+    }
+  }
+}
+
+cat(sprintf("Found %d RGB COG asset(s):\n\n", length(rgb_assets)))
+if (length(rgb_assets) > 0) {
+  df <- do.call(rbind, lapply(rgb_assets, function(x)
+    data.frame(collection = x$collection, date = x$date,
+               key = x$key, stringsAsFactors = FALSE)))
+  print(df, row.names = FALSE)
+}
+```
+
+---
+## Step 4 — COG preview
+
+Open the first RGB COG via `/vsicurl/` (no local download).
+`terra::plotRGB()` reads at display resolution via GDAL overviews — no full file download.
+
+```{r cog-preview, fig.width=10, fig.height=8}
+# ── Step 4: COG preview of first RGB COG ──────────────────────────────────────
+if (length(rgb_assets) == 0) {
+  cat("No RGB COG assets found — adjust BBOX or DATETIME.\n")
+} else {
+  first    <- rgb_assets[[1]]
+  url_auth <- add_auth(first$href, COG_USER, COG_PASS)
+
+  cat(sprintf("Collection : %s\n", first$collection))
+  cat(sprintf("Date       : %s\n", first$date))
+  cat(sprintf("File       : %s\n", basename(first$href)))
+
+  # Open metadata only — no data read yet
+  r <- terra::rast(paste0("/vsicurl/", url_auth))
+  cat(sprintf("\nDimensions : %d x %d px\n", terra::ncol(r), terra::nrow(r)))
+  cat(sprintf("CRS        : %s\n", terra::crs(r, describe = TRUE)$code))
+  cat(sprintf("Bands      : %d\n", terra::nlyr(r)))
+
+  # Display at ~512x512 px — terra uses GDAL overviews for efficient reads
+  terra::plotRGB(
+    r[[1:3]], r = 1, g = 2, b = 3,
+    stretch = "lin",
+    maxcell = 512L * 512L,
+    main    = sprintf("%s  |  %s\n%s",
+                      first$collection, first$date, basename(first$href))
+  )
+}
+```
