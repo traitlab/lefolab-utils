@@ -132,7 +132,6 @@ for (item in items) {
       rgb_assets[[length(rgb_assets) + 1]] <- list(
         collection = coll,
         date       = dt,
-        key        = key,
         href       = href
       )
     }
@@ -143,7 +142,7 @@ cat(sprintf("Found %d RGB COG asset(s):\n\n", length(rgb_assets)))
 if (length(rgb_assets) > 0) {
   df <- do.call(rbind, lapply(rgb_assets, function(x)
     data.frame(collection = x$collection, date = x$date,
-               key = x$key, stringsAsFactors = FALSE)))
+               href = x$href, stringsAsFactors = FALSE)))
   print(df, row.names = FALSE)
 }
 ```
