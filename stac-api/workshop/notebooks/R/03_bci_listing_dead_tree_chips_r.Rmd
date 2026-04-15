@@ -106,13 +106,14 @@ dir.create(OUTPUT_DIR, recursive = TRUE)
 
 # Load GeoPackage and find target tree point
 cat("Loading geopackage:", GPKG_PATH, "\n")
-gpkg <- sf::st_read(GPKG_PATH, quiet = TRUE)
+gpkg <- sf::st_read(paste0("/vsicurl/", GPKG_PATH), quiet = TRUE)
 cat("Geopackage layer rows:", nrow(gpkg), "\n")
 
-matches <- gpkg[
+matches <- gpkg[which(
   as.character(gpkg$TreeTag) == TARGET_TREETAG &
   !is.na(gpkg$Polygon_ID) &
-  gpkg$Polygon_ID == TARGET_POLYGON_ID, ]
+  as.numeric(gpkg$Polygon_ID) == as.numeric(TARGET_POLYGON_ID)
+), ]
 
 if (nrow(matches) == 0) {
   stop("No matching row found for treetag/polygon_id in geopackage.")
