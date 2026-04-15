@@ -119,7 +119,7 @@ if (nrow(matches) == 0) {
   stop("No matching row found for treetag/polygon_id in geopackage.")
 }
 
-geom   <- matches$geometry[[1]]
+geom   <- sf::st_geometry(matches)[[1]]
 point  <- if (sf::st_geometry_type(geom) == "POINT") geom else sf::st_centroid(geom)
 coords <- sf::st_coordinates(point)
 
