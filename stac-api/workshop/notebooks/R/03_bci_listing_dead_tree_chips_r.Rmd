@@ -123,13 +123,13 @@ geom   <- sf::st_geometry(matches)[[1]]
 point  <- if (sf::st_geometry_type(geom) == "POINT") geom else sf::st_centroid(geom)
 coords <- sf::st_coordinates(point)
 
-tree_x   <- coords[1]
-tree_y   <- coords[2]
-tree_crs <- sf::st_crs(gpkg)$wkt
+tree_x  <- coords[1]
+tree_y  <- coords[2]
+tree_pt <- terra::vect(sf::st_sfc(point, crs = sf::st_crs(gpkg)))
 
 n <- length(cog_list)
 cat(sprintf("Found point at x=%.6f, y=%.6f (CRS: %s). Processing %d COGs...\n",
-            tree_x, tree_y, tree_crs, n))
+            tree_x, tree_y, sf::st_crs(gpkg)$input, n))
 
 for (idx in seq_along(cog_list)) {
   c    <- cog_list[[idx]]
@@ -156,8 +156,7 @@ for (idx in seq_along(cog_list)) {
   if (is.null(r)) next
 
   # Reproject tree point to COG CRS using terra
-  pt <- terra::vect(matrix(c(tree_x, tree_y), ncol = 2), crs = tree_crs)
-  pt <- terra::project(pt, terra::crs(r))
+  pt <- terra::project(tree_pt, terra::crs(r))
   xp <- terra::crds(pt)[1, 1]
   yp <- terra::crds(pt)[1, 2]
 
