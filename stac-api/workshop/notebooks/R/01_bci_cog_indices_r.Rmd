@@ -165,13 +165,13 @@ if (nrow(matches) == 0) {
                TARGET_TREETAG, TARGET_POLYGON_ID))
 }
 
-geom   <- matches$geometry[[1]]
+geom <- sf::st_geometry(matches)[[1]]
 point  <- if (sf::st_geometry_type(geom) == "POINT") geom else sf::st_centroid(geom)
 coords <- sf::st_coordinates(point)
 
 TREE_X   <- coords[1]
 TREE_Y   <- coords[2]
-TREE_CRS <- sf::st_crs(gpkg)$input   # e.g. "EPSG:32617"
+TREE_CRS <- paste0("EPSG:", sf::st_crs(gpkg)$epsg)   # e.g. "EPSG:32617"
 
 cat("Target tree tag :", TARGET_TREETAG,    "\n")
 cat("Polygon ID      :", TARGET_POLYGON_ID, "\n")

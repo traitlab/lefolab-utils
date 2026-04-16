@@ -21,13 +21,14 @@ End-to-end connectivity test for the Kanopia STAC API:
 
 ```{r packages, message=FALSE, warning=FALSE}
 # ── Install packages (safe to re-run) ─────────────────────────────────────────
-pkgs <- c("rstac", "terra", "httr")
+pkgs <- c("rstac", "terra", "httr", "stars")
 new  <- pkgs[!pkgs %in% installed.packages()[, "Package"]]
 if (length(new)) install.packages(new)
 
 library(rstac)
 library(terra)
 library(httr)
+library(stars)
 
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
@@ -171,13 +172,15 @@ if (length(rgb_assets) == 0) {
   cat(sprintf("CRS        : %s\n", terra::crs(r, describe = TRUE)$code))
   cat(sprintf("Bands      : %d\n", terra::nlyr(r)))
 
-  # Display at ~512x512 px — terra uses GDAL overviews for efficient reads
-  terra::plotRGB(
-    r[[1:3]], r = 1, g = 2, b = 3,
-    stretch = "lin",
-    maxcell = 512L * 512L,
-    main    = sprintf("%s  |  %s\n%s",
-                      first$collection, first$date, basename(first$href))
+  # Display at ~512x512 px using stars
+  r <- read_stars(
+    paste0("/vsicurl/", url_auth),
+    RasterIO = list(
+      nBufXSize = 512L,
+      nBufYSize = 512L,
+      bands = 1:3
+    )
   )
+  plot(r, rgb = 1:3)
 }
 ```
