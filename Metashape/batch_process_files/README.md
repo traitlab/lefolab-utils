@@ -7,4 +7,4 @@
 6. Again, you need to confirm the projection for the jobs 'Export Orthomosaic', 'Build DEM', 'Export Point Cloud' and 'Export DEM'. You also need to confirm the output path for all export jobs.
 7. Run the batch by clicking on Ok.
 
-> Batch process files are currently available for Metashape versions 2.1.X and 2.2.X (by file name)
+> Batch process files are currently available for Metashape versions 2.1.X, 2.2.X and 2.3.X (by file name)
