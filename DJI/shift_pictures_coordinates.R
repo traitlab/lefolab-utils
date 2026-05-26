@@ -47,7 +47,8 @@ shift_pictures_coordinates <- function(input_folder,
   }
   
   if (length(wide_files) == 0) {
-  stop("No image files found in the input folder.")
+    sink()
+    stop("No image files found in the input folder.")
   }
   
   # Project the base positions to the projected CRS
@@ -59,6 +60,43 @@ shift_pictures_coordinates <- function(input_folder,
   # Calculate the XY difference in the projected CRS
   xy_difference <- new_base_projected - old_base_projected
   
+  # Read all EXIF metadata in one batch call (much faster than per-file)
+  all_exif_raw <- exif_read(wide_files, tags = c("GPSLongitude", "GPSLatitude", "GPSAltitude", "AbsoluteAltitude", "SourceFile"))
+  if (nrow(all_exif_raw) == 0) {
+    sink()
+    stop("ExifTool could not read any files in the input folder.")
+  }
+  # Align to wide_files order (exif_read does not guarantee order)
+  all_exif <- all_exif_raw[match(normalizePath(wide_files), normalizePath(all_exif_raw$SourceFile)), ]
+
+  # Vectorized coordinate transform for all images at once
+  # Use (0, 0) as placeholder for NA coordinates; those rows are skipped in the loop
+  coords_sfc <- st_sfc(
+    lapply(seq_len(nrow(all_exif)), function(i) {
+      lon <- if (is.na(all_exif$GPSLongitude[i])) 0 else all_exif$GPSLongitude[i]
+      lat <- if (is.na(all_exif$GPSLatitude[i]))  0 else all_exif$GPSLatitude[i]
+      st_point(c(lon, lat))
+    }),
+    crs = input_crs
+  )
+  coords_projected <- st_coordinates(st_transform(coords_sfc, crs = projected_crs))
+  shifted_projected <- coords_projected
+  shifted_projected[, "X"] <- coords_projected[, "X"] + xy_difference[1]
+  shifted_projected[, "Y"] <- coords_projected[, "Y"] + xy_difference[2]
+  shifted_sfc <- st_sfc(
+    lapply(seq_len(nrow(shifted_projected)), function(i) st_point(shifted_projected[i, ])),
+    crs = projected_crs
+  )
+  shifted_wgs84 <- st_coordinates(st_transform(shifted_sfc, crs = input_crs))
+
+  height_shift <- new_base_position["height"] - old_base_position["height"]
+  abs_alt_is_char <- is.character(all_exif$AbsoluteAltitude)
+  abs_alt_numeric <- if (abs_alt_is_char) {
+    as.numeric(gsub("\\+", "", all_exif$AbsoluteAltitude))
+  } else {
+    all_exif$AbsoluteAltitude
+  }
+
   # Initialize progress bar
   sink(NULL)
   total_files <- length(wide_files)
@@ -68,24 +106,24 @@ shift_pictures_coordinates <- function(input_folder,
   # Process each image
   for (i in seq_along(wide_files)) {
     wide_file <- wide_files[i]
-    
+
     # Update progress bar
     sink(NULL)
     setTxtProgressBar(pb, i)
     sink(log_file, append = TRUE, split = TRUE)
-  
+
     pair_files <- wide_file  # Default to single file
-    
+
     if (withzoom) {
       # Extract the polygon id from image file
       polygon_id <- gsub(".*_(\\d+)\\..*", "\\1", basename(wide_file))
-      
+
       # Construct the pattern to match the corresponding "zoom" file
       identifier_match <- paste0("_", polygon_id, "zoom.JPG$")
-      
+
       # Search for the "zoom" file in the same folder
       zoom_file <- list.files(dirname(wide_file), pattern = identifier_match, full.names = TRUE, ignore.case = TRUE)
-      
+
       # Check if the "zoom" file exists
       if (length(zoom_file) == 0) {
         warning(paste("Skipping", basename(wide_file), "- no corresponding zoom file found."))
@@ -95,86 +133,54 @@ shift_pictures_coordinates <- function(input_folder,
 
       pair_files <- c(wide_file, zoom_file)
     }
-    
-    # Read EXIF metadata
-    exif_data <- exif_read(wide_file)
-    
-    # Check if GPS data exists
-    if (is.na(exif_data$GPSLongitude) || is.na(exif_data$GPSLatitude)) {
+
+    # Check if GPS data exists (using pre-read batch data)
+    if (is.na(all_exif$GPSLongitude[i]) || is.na(all_exif$GPSLatitude[i])) {
       warning(paste("Skipping", basename(wide_file), "- no GPS XY data found."))
       error_count <- error_count + 1
       next
     }
-    
-    # Extract GPS coordinates
-    gps_coords <- c(exif_data$GPSLongitude, exif_data$GPSLatitude)
-    
-    # Check if altitude data exists
-    if (is.na(exif_data$GPSAltitude) || is.na(exif_data$AbsoluteAltitude)) {
+
+    if (is.na(all_exif$GPSAltitude[i]) || is.na(all_exif$AbsoluteAltitude[i])) {
       warning(paste("Skipping", basename(wide_file), "- no GPS altitude data found."))
       error_count <- error_count + 1
       next
     }
-    
-    # Extract altitude and convert AbsoluteAltitude to numeric if needed
-    gps_altitude <- exif_data$GPSAltitude
-    
-    if (is.numeric(exif_data$AbsoluteAltitude)) {
-      absolute_altitude <- exif_data$AbsoluteAltitude
-    } else {
-      absolute_altitude <- as.numeric(gsub("\\+", "", exif_data$AbsoluteAltitude))
-    }
 
-    # Convert GPS coordinates to sf object
-    point_sf <- st_sfc(st_point(gps_coords), crs = input_crs)
-    
-    # Project to the specified CRS
-    point_projected <- st_transform(point_sf, crs = projected_crs) %>% st_coordinates()
-    
-    # Apply the XY offset and Z shift
-    shifted_coords <- point_projected
-    shifted_coords[1] <- point_projected[1] + xy_difference[1]
-    shifted_coords[2] <- point_projected[2] + xy_difference[2]
-    shifted_gps_altitude <- gps_altitude + (new_base_position["height"] - old_base_position["height"])
-    shifted_absolute_altitude <- absolute_altitude + (new_base_position["height"] - old_base_position["height"])
-    
-    # Format the updated AbsoluteAltitude back to a string with the correct sign if needed
-    if (is.character(exif_data$AbsoluteAltitude)) {
-      shifted_absolute_altitude <- sprintf("+%.3f", shifted_absolute_altitude)
-    }
-    
-    # Convert back to WGS84
-    shifted_point <- st_sfc(st_point(shifted_coords), crs = projected_crs) %>% 
-      st_transform(crs = input_crs) %>% st_coordinates()
-    
+    gps_coords        <- c(all_exif$GPSLongitude[i], all_exif$GPSLatitude[i])
+    gps_altitude      <- all_exif$GPSAltitude[i]
+    shifted_gps_alt   <- gps_altitude + height_shift
+    shifted_abs_alt   <- abs_alt_numeric[i] + height_shift
+    if (abs_alt_is_char) shifted_abs_alt <- sprintf("+%.3f", shifted_abs_alt)
+
     # Copy files to output folder
     output_files <- file.path(output_folder, basename(pair_files))
     file.copy(pair_files, output_files, overwrite = TRUE)
-  
+
     # Update EXIF metadata using exiftoolr with error handling
     tryCatch({
       exif_call(
         args = c(
           "-overwrite_original",
-          paste0("-GPSLongitude=", shifted_point[1]),
-          paste0("-GPSLatitude=", shifted_point[2]),
-          paste0("-GPSAltitude=", shifted_gps_altitude),
-          paste0("-AbsoluteAltitude=", shifted_absolute_altitude)
+          paste0("-GPSLongitude=", shifted_wgs84[i, "X"]),
+          paste0("-GPSLatitude=",  shifted_wgs84[i, "Y"]),
+          paste0("-GPSAltitude=",  shifted_gps_alt),
+          paste0("-AbsoluteAltitude=", shifted_abs_alt)
         ),
         path = output_files
       )
       success_count <- success_count + 1
-      cat(sprintf("Successfully updated EXIF metadata for: %s | Before: (%.8f, %.8f, %.3f) | After: (%.8f, %.8f, %.3f)\n", 
+      cat(sprintf("Successfully updated EXIF metadata for: %s | Before: (%.8f, %.8f, %.3f) | After: (%.8f, %.8f, %.3f)\n",
                   paste(basename(output_files), collapse = ", "),
-                  gps_coords[1], gps_coords[2], gps_altitude,
-                  shifted_point[1], shifted_point[2], shifted_gps_altitude), 
+                  gps_coords[2], gps_coords[1], gps_altitude,
+                  shifted_wgs84[i, "Y"], shifted_wgs84[i, "X"], shifted_gps_alt),
           file = log_file, append = TRUE)
     }, error = function(e) {
       warning(paste("Failed to update EXIF metadata for", paste(basename(output_files), collapse = ", "), ":", e$message))
       error_count <- error_count + 1
     })
   }
-  
+
   close(pb)
   cat(sprintf("Processing complete: %d successful, %d failed\n", success_count, error_count))
   sink()
