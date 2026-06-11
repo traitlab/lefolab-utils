@@ -5,12 +5,12 @@ project2Dpictures_arbutus.py
 Generate footprint polygons for aerial images from Arbutus server based on camera parameters and DSM.
 
 Usage:
-    python project2Dpictures_arbutus.py --config-path <rclone_config> --project-qualifier <qualifier> --dsm-dir <dsm_directory> --sensor-width <Sw> --focal-length <FR> --crs <EPSG> --output-dir <output_dir> [--output <output.gpkg>] [--center-crop <size>] [--tile-crop <width> <height>]
+    python project2Dpictures_arbutus.py --config-path <rclone_config> --project-qualifier <qualifier> --dsm <dsm_path> --sensor-width <Sw> --focal-length <FR> --crs <EPSG> --output-dir <output_dir> [--output <output.gpkg>] [--center-crop <size>] [--tile-crop <width> <height>]
 
 The script:
 1. Lists zoom images from Arbutus server for a given project qualifier
 2. Fetches images via HTTP and extracts GPS coordinates and altitude from EXIF
-3. For each mission, selects the DSM file with the closest date to the mission date
+3. For each mission, selects the DSM file with the closest date to the mission date if multiple DSMs are provided
 4. Samples DSM median within 0.5m buffer around image coordinates
 5. Computes flight height H = altitude - DSM_median
 6. Calculates GSD = (Sw * H) / (FR * imW)
@@ -747,9 +747,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python project2Dpictures_arbutus.py --config-path ~/.config/rclone/rclone.conf --project-qualifier bci --dsm-dir ./dsm_files --sensor-width 6.4 --focal-length 29.9 --crs EPSG:32617 --output-dir ./output
-  python project2Dpictures_arbutus.py --config-path ~/.config/rclone/rclone.conf --project-qualifier bci --dsm-dir ./dsm_files --sensor-width 6.4 --focal-length 29.9 --crs EPSG:32617 --output-dir ./output --center-crop 1008
-  python project2Dpictures_arbutus.py --config-path ~/.config/rclone/rclone.conf --project-qualifier bci --dsm-dir ./dsm_files --sensor-width 6.4 --focal-length 29.9 --crs EPSG:32617 --output-dir ./output --tile-crop 1000 1000
+  python project2Dpictures_arbutus.py --config-path ~/.config/rclone/rclone.conf --project-qualifier bci --dsm ./dsm_files --sensor-width 6.4 --focal-length 29.9 --crs EPSG:32617 --output-dir ./output
+  python project2Dpictures_arbutus.py --config-path ~/.config/rclone/rclone.conf --project-qualifier bci --dsm ./dsm_files --sensor-width 6.4 --focal-length 29.9 --crs EPSG:32617 --output-dir ./output --center-crop 1008
+  python project2Dpictures_arbutus.py --config-path ~/.config/rclone/rclone.conf --project-qualifier bci --dsm ./dsm_files --sensor-width 6.4 --focal-length 29.9 --crs EPSG:32617 --output-dir ./output --tile-crop 1000 1000
         """
     )
     
@@ -757,8 +757,8 @@ Examples:
                         help='Path to rclone config file')
     parser.add_argument('--project-qualifier', type=str, required=True,
                         help='Project qualifier string (e.g., bci, quebec)')
-    parser.add_argument('--dsm-dir', type=str, required=True,
-                        help='Directory containing Digital Surface Model (DSM) raster files with dates in filenames (YYYYMMDD format)')
+    parser.add_argument('--dsm', type=str, required=True,
+                        help='Path to DSM file or directory containing DSM raster files with dates in filenames (YYYYMMDD format). If a file is provided, it will be used for all missions.')
     parser.add_argument('--sensor-width', type=float, required=True,
                         help='Camera sensor width in millimeters (Sw)')
     parser.add_argument('--focal-length', type=float, required=True,
@@ -787,20 +787,29 @@ Examples:
     # Setup logging
     logger = setup_logging(args.output_dir, args.project_qualifier)
     
-    # Check if DSM directory exists
-    if not os.path.isdir(args.dsm_dir):
-        logger.error(f"DSM directory does not exist: {args.dsm_dir}")
+    # Check if DSM path is a file or directory
+    use_single_dsm = False
+    single_dsm_path = None
+    available_dsm_files = []
+    
+    if os.path.isfile(args.dsm):
+        # Single DSM file provided - use it for all missions
+        use_single_dsm = True
+        single_dsm_path = args.dsm
+        logger.info(f"Using single DSM file for all missions: {single_dsm_path}")
+    elif os.path.isdir(args.dsm):
+        # Directory provided - find and select DSM files by date
+        logger.info(f"Scanning DSM directory: {args.dsm}")
+        available_dsm_files = find_dsm_files(args.dsm)
+        
+        if not available_dsm_files:
+            logger.error(f"No valid DSM files found in {args.dsm}")
+            sys.exit(1)
+        
+        logger.info(f"Found {len(available_dsm_files)} DSM files with valid dates")
+    else:
+        logger.error(f"DSM path does not exist or is not a file/directory: {args.dsm}")
         sys.exit(1)
-    
-    # Find all available DSM files
-    logger.info(f"Scanning DSM directory: {args.dsm_dir}")
-    available_dsm_files = find_dsm_files(args.dsm_dir)
-    
-    if not available_dsm_files:
-        logger.error(f"No valid DSM files found in {args.dsm_dir}")
-        sys.exit(1)
-    
-    logger.info(f"Found {len(available_dsm_files)} DSM files with valid dates")
     
     # Validate mutually exclusive options
     if args.center_crop and args.tile_crop:
@@ -815,7 +824,7 @@ Examples:
         logger.info(f"  Center crop: {args.center_crop} x {args.center_crop} pixels")
     if args.tile_crop:
         logger.info(f"  Tile crop: {args.tile_crop[0]} x {args.tile_crop[1]} pixels")
-    logger.info(f"DSM directory: {args.dsm_dir}")
+    logger.info(f"DSM path: {args.dsm}")
     logger.info(f"Output CRS: {args.crs}")
     logger.info(f"Max workers: {args.max_workers}")
     
@@ -838,18 +847,24 @@ Examples:
     for folder in folders:
         logger.info(f"Processing mission: {folder}")
         
-        # Extract mission date and select appropriate DSM
-        mission_date = extract_date_from_mission_id(folder)
-        if mission_date is None:
-            logger.warning(f"Could not extract date from mission '{folder}', skipping")
-            continue
-        
-        logger.info(f"  Mission date: {mission_date.strftime('%Y-%m-%d')}")
-        dsm_path = select_closest_dsm(mission_date, available_dsm_files)
-        
-        if dsm_path is None:
-            logger.error(f"Could not select DSM for mission '{folder}', skipping")
-            continue
+        # Select DSM file
+        if use_single_dsm:
+            # Use the single DSM file provided
+            dsm_path = single_dsm_path
+            logger.info(f"  Using DSM: {os.path.basename(dsm_path)}")
+        else:
+            # Extract mission date and select appropriate DSM
+            mission_date = extract_date_from_mission_id(folder)
+            if mission_date is None:
+                logger.warning(f"Could not extract date from mission '{folder}', skipping")
+                continue
+            
+            logger.info(f"  Mission date: {mission_date.strftime('%Y-%m-%d')}")
+            dsm_path = select_closest_dsm(mission_date, available_dsm_files)
+            
+            if dsm_path is None:
+                logger.error(f"Could not select DSM for mission '{folder}', skipping")
+                continue
         
         # List files in folder
         file_list = subprocess.run(

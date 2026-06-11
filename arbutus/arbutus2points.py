@@ -169,19 +169,27 @@ def get_coordinates_from_image_url(picture_url, session):
             logger.error(f"Failed to fetch image. HTTP Status Code: {response.status_code}")
         return None
 
-def process_mission(folder, files, base_url, naming_convention, existing_missions, existing_gdf, rows, max_workers):
+def _extract_identifier(filename):
+    last_part = os.path.basename(filename).split('_')[-1].lower()
+    return re.sub(r'(wide|med|tele|zoom)?\.jpg$', '', last_part)
+
+
+def process_mission(folder, files, base_url, existing_missions, existing_gdf, rows, max_workers):
     jpg_files = [f for f in files if f.lower().endswith('.jpg')]
-    if naming_convention == 'tele':
-        closeup_files = [f for f in jpg_files if 'tele' in f.lower()]
-        wide_files = [f for f in jpg_files if 'wide' in f.lower()]
-    else:
-        closeup_files = [f for f in jpg_files if 'zoom' in f.lower()]
-        wide_files = [f for f in jpg_files if 'zoom' not in f.lower() and 'tele' not in f.lower()]
+    closeup_files = [f for f in jpg_files if 'tele' in f.lower() or 'zoom' in f.lower()]
+    med_files = [f for f in jpg_files if 'med' in f.lower()]
+    wide_files = [f for f in jpg_files if 'tele' not in f.lower() and 'zoom' not in f.lower() and 'med' not in f.lower()]
+
+    wide_lookup = {_extract_identifier(f): f for f in wide_files}
+    med_lookup = {_extract_identifier(f): f for f in med_files}
 
     if len(wide_files) != len(closeup_files):
         logger.warning(f"Mission '{folder}': Number of wide files ({len(wide_files)}) does not match number of close-up files ({len(closeup_files)})")
+    if med_files and len(med_files) != len(closeup_files):
+        logger.warning(f"Mission '{folder}': Number of med files ({len(med_files)}) does not match number of close-up files ({len(closeup_files)})")
 
     rows_before = len(rows)
+    n_closeup = len(closeup_files)
 
     if folder in existing_missions:
         existing_points = set()
@@ -190,22 +198,12 @@ def process_mission(folder, files, base_url, naming_convention, existing_mission
                 existing_gdf[existing_gdf['mission_id'] == folder]['wide_url'],
                 existing_gdf[existing_gdf['mission_id'] == folder]['point_id']
             ))
-        wide_lookup = {
-            os.path.basename(wf).split('_')[-1].lower()
-                .replace('jpg', '').replace('.', '').replace('zoom', '').replace('wide', ''): wf
-            for wf in wide_files
-        }
         closeup_files_to_add = []
         for closeup_file in closeup_files:
-            closeup_basename = os.path.basename(closeup_file)
-            identifier_match = (
-                closeup_basename.split("_")[-1].lower().replace("tele.jpg", "")
-                if naming_convention == 'tele'
-                else closeup_basename.split("_")[-1].lower().replace("zoom.jpg", "")
-            )
-            wide_file = wide_lookup.get(identifier_match)
+            identifier = _extract_identifier(closeup_file)
+            wide_file = wide_lookup.get(identifier)
             wide_url = f"{base_url}/{folder}/{wide_file}" if wide_file else None
-            if wide_url and (wide_url, identifier_match) not in existing_points:
+            if wide_url and (wide_url, identifier) not in existing_points:
                 closeup_files_to_add.append(closeup_file)
         if not closeup_files_to_add:
             logger.info(f"All points for mission '{folder}' are already present. Skipping.")
@@ -213,7 +211,7 @@ def process_mission(folder, files, base_url, naming_convention, existing_mission
         logger.info(f"Adding {len(closeup_files_to_add)} missing points for mission '{folder}'.")
         closeup_files = closeup_files_to_add
 
-    args_list = [(closeup_file, wide_files, folder, base_url, naming_convention) for closeup_file in closeup_files]
+    args_list = [(closeup_file, wide_lookup, med_lookup, folder, base_url) for closeup_file in closeup_files]
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         results = list(executor.map(process_closeup_file, args_list))
     for result in results:
@@ -221,45 +219,34 @@ def process_mission(folder, files, base_url, naming_convention, existing_mission
             rows.append(result)
 
     rows_added = len(rows) - rows_before
-    logger.info(f"Finished mission '{folder}' [{naming_convention}]: {rows_added} points added, {len(wide_files)} wide images, {len(closeup_files)} close-up images.")
+    logger.info(f"Finished mission '{folder}': {rows_added} points added, {len(wide_files)} wide images, {n_closeup} close-up images.")
 
 
 def process_closeup_file(args):
-    # Create session with retry logic
     session = setup_session()
 
-    closeup_file, wide_files, folder, base_url, naming_convention = args
-    closeup_basename = os.path.basename(closeup_file)
+    closeup_file, wide_lookup, med_lookup, folder, base_url = args
+    identifier = _extract_identifier(closeup_file)
 
-    if naming_convention == 'tele':
-        identifier_match = closeup_basename.split("_")[-1].lower().replace("tele.jpg", "")
-        wide_pattern = rf'_{identifier_match}wide\.jpg$'
-    else:
-        # Legacy naming convention (zoom)
-        identifier_match = closeup_basename.split("_")[-1].lower().replace("zoom.jpg", "")
-        wide_pattern = rf'_{identifier_match}\.jpg$'
-
-    wide_file = None
-    for wide_candidate in wide_files:
-        wide_basename = os.path.basename(wide_candidate)
-        if re.search(wide_pattern, wide_basename, re.IGNORECASE):
-            wide_file = wide_candidate
-            break
-
+    wide_file = wide_lookup.get(identifier)
     if not wide_file:
-        logger.warning(f"Could not find matching wide photo for {closeup_file} with identifier {identifier_match}")
+        logger.warning(f"Could not find matching wide photo for {closeup_file} with identifier {identifier}")
         return None
 
+    med_file = med_lookup.get(identifier)
+
     wide_url = f"{base_url}/{folder}/{wide_file}"
-    closeup_url = f"{base_url}/{folder}/{closeup_file}"
+    med_url = f"{base_url}/{folder}/{med_file}" if med_file else None
+    tele_url = f"{base_url}/{folder}/{closeup_file}"
     coords = get_coordinates_from_image_url(wide_url, session)
     if coords:
         return {
             'geometry': Point(coords[1], coords[0]),
             'mission_id': folder,
-            'point_id': identifier_match,
+            'point_id': identifier,
             'wide_url': wide_url,
-            'zoom_url': closeup_url
+            'med_url': med_url,
+            'tele_url': tele_url
         }
     return None
 
@@ -296,12 +283,13 @@ def main(output_dir, points_layer, project_qualifier, max_workers=8):
         paginator = s3_client.get_paginator('list_objects_v2')
         pages = paginator.paginate(Bucket=folder)
         files = [obj['Key'] for page in pages for obj in page.get('Contents', [])]
-        process_mission(folder, files, legacy_base_url, 'zoom', existing_missions, existing_gdf, rows, max_workers)
+        process_mission(folder, files, legacy_base_url, existing_missions, existing_gdf, rows, max_workers)
 
     # Loop 2: new single-bucket missions (prefixes inside BUCKET_WPT, tele/zoom convention auto-detected)
     base_url = f"{ALLIANCECAN_URL}/{BUCKET_WPT}"
-    response = s3_client.list_objects_v2(Bucket=BUCKET_WPT, Delimiter='/')
-    all_prefixes = [cp['Prefix'].rstrip('/') for cp in response.get('CommonPrefixes', [])]
+    prefix_paginator = s3_client.get_paginator('list_objects_v2')
+    prefix_pages = prefix_paginator.paginate(Bucket=BUCKET_WPT, Delimiter='/')
+    all_prefixes = [cp['Prefix'].rstrip('/') for page in prefix_pages for cp in page.get('CommonPrefixes', [])]
     folders = [p for p in all_prefixes if project_qualifier.lower() in p.lower() and 'wpt' in p.lower()]
     logger.info(f"Found {len(folders)} folder(s) in '{BUCKET_WPT}' matching '{project_qualifier}'.")
 
@@ -314,9 +302,7 @@ def main(output_dir, points_layer, project_qualifier, max_workers=8):
                 rel = obj['Key'][len(folder) + 1:]
                 if rel:
                     files.append(rel)
-        jpg_files = [f for f in files if f.lower().endswith('.jpg')]
-        naming_convention = 'tele' if any('tele' in f.lower() for f in jpg_files) else 'zoom'
-        process_mission(folder, files, base_url, naming_convention, existing_missions, existing_gdf, rows, max_workers)
+        process_mission(folder, files, base_url, existing_missions, existing_gdf, rows, max_workers)
 
     # After processing all folders
     if rows:
