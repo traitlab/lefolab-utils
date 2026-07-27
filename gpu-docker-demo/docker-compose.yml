@@ -1,0 +1,13 @@
+services:
+  gpu-demo:
+    build: .
+    volumes:
+      - ./checkpoints:/app/checkpoints
+      - ./data:/app/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
