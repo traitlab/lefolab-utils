@@ -6,6 +6,7 @@ with all their files/subfolders and the same sizes.
 
 import os
 import re
+import argparse
 import paramiko
 import getpass
 import keyring
@@ -21,7 +22,17 @@ SFTP_USER    = "username"                       # ← edit
 KEYRING_SERVICE = "check_sftp_sync"             # key under which the password is stored
 # ──────────────────────────────────────────────────────────────────────────────
 
-FOLDER_PATTERN = re.compile(r"^\d{8}_.+_.+$")
+KEYRING_ACCOUNT = f"{SFTP_USER}@{SFTP_HOST}"    # keyring entry for the config above
+FOLDER_PATTERN  = re.compile(r"^\d{8}_.+_.+$")
+
+
+def delete_saved_password():
+    """Removes the stored password for the configured user/host (run with -d)."""
+    try:
+        keyring.delete_password(KEYRING_SERVICE, KEYRING_ACCOUNT)
+        print(f"Password deleted for {KEYRING_ACCOUNT}.")
+    except keyring.errors.PasswordDeleteError:
+        print(f"No password stored for {KEYRING_ACCOUNT}.")
 
 
 def get_local_tree(folder_path: Path) -> dict[str, int]:
@@ -101,11 +112,10 @@ def main():
 
     # Password is stored in the OS keyring (Windows Credential Manager, macOS
     # Keychain, Linux Secret Service) and only prompted for the first time.
-    account  = f"{SFTP_USER}@{SFTP_HOST}"
-    password = keyring.get_password(KEYRING_SERVICE, account)
+    password = keyring.get_password(KEYRING_SERVICE, KEYRING_ACCOUNT)
     if password is None:
-        password = getpass.getpass(f"SFTP password for {account}: ")
-        keyring.set_password(KEYRING_SERVICE, account, password)
+        password = getpass.getpass(f"SFTP password for {KEYRING_ACCOUNT}: ")
+        keyring.set_password(KEYRING_SERVICE, KEYRING_ACCOUNT, password)
 
     # SFTP connection
     ssh = paramiko.SSHClient()
@@ -175,4 +185,12 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "-d", "--delete-password", action="store_true",
+        help="delete the saved SFTP password from the OS keyring and exit",
+    )
+    if parser.parse_args().delete_password:
+        delete_saved_password()
+    else:
+        main()
