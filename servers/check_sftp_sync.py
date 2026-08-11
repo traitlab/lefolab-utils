@@ -1,29 +1,31 @@
 """
 check_sftp_sync.py
-Vérifie que les dossiers locaux YYYYMMDD_site_sensor sont bien présents sur le serveur SFTP,
-avec tous leurs fichiers/sous-dossiers et les mêmes tailles.
+Checks that local YYYYMMDD_site_sensor folders are present on the SFTP server,
+with all their files/subfolders and the same sizes.
 """
 
 import os
 import re
 import paramiko
 import getpass
+import keyring
 from pathlib import Path
 from collections import defaultdict
 
 # ─── CONFIGURATION ────────────────────────────────────────────────────────────
-LOCAL_ROOT   = r"G:\LEFO\2024_BCI\lefodata"   # ← à modifier
-REMOTE_ROOT  = "/data/drone_missions"             # ← à modifier si besoin
-SFTP_HOST    = "lefodata-irbv.irbv.umontreal.ca"                 # ← à modifier
+LOCAL_ROOT   = r"C:\path\to\local\folders"      # ← edit
+REMOTE_ROOT  = "data/drone_missions"            # ← edit if needed
+SFTP_HOST    = "sftp.example.com"               # ← edit
 SFTP_PORT    = 22
-SFTP_USER    = "acaronguay"                         # ← à modifier
+SFTP_USER    = "username"                       # ← edit
+KEYRING_SERVICE = "check_sftp_sync"             # key under which the password is stored
 # ──────────────────────────────────────────────────────────────────────────────
 
 FOLDER_PATTERN = re.compile(r"^\d{8}_.+_.+$")
 
 
 def get_local_tree(folder_path: Path) -> dict[str, int]:
-    """Retourne {chemin_relatif: taille} pour tous les fichiers sous folder_path."""
+    """Returns {relative_path: size} for every file under folder_path."""
     tree = {}
     for root, _, files in os.walk(folder_path):
         for f in files:
@@ -34,7 +36,7 @@ def get_local_tree(folder_path: Path) -> dict[str, int]:
 
 
 def get_remote_tree(sftp, remote_path: str) -> dict[str, int]:
-    """Retourne {chemin_relatif: taille} pour tous les fichiers sous remote_path via SFTP."""
+    """Returns {relative_path: size} for every file under remote_path via SFTP."""
     tree = {}
 
     def walk(path, prefix=""):
@@ -56,7 +58,7 @@ def get_remote_tree(sftp, remote_path: str) -> dict[str, int]:
 
 
 def compare(local_tree: dict, remote_tree: dict) -> dict:
-    """Compare deux arbres et retourne les différences."""
+    """Compares two trees and returns the differences."""
     local_files  = set(local_tree.keys())
     remote_files = set(remote_tree.keys())
 
@@ -75,36 +77,42 @@ def compare(local_tree: dict, remote_tree: dict) -> dict:
 
 
 def format_size(n: int) -> str:
-    for unit in ("o", "Ko", "Mo", "Go"):
+    for unit in ("B", "KB", "MB", "GB"):
         if n < 1024:
             return f"{n:.1f} {unit}"
         n /= 1024
-    return f"{n:.1f} To"
+    return f"{n:.1f} TB"
 
 
 def main():
     local_root = Path(LOCAL_ROOT)
 
-    # Trouver les dossiers mission locaux
+    # Find local mission folders
     missions = sorted([
         d for d in local_root.iterdir()
         if d.is_dir() and FOLDER_PATTERN.match(d.name)
     ])
 
     if not missions:
-        print("Aucun dossier mission trouvé dans", LOCAL_ROOT)
+        print("No mission folder found in", LOCAL_ROOT)
         return
 
-    print(f"{len(missions)} dossier(s) mission trouvé(s) localement.\n")
+    print(f"{len(missions)} local mission folder(s) found.\n")
 
-    password = getpass.getpass(f"Mot de passe SFTP pour {SFTP_USER}@{SFTP_HOST} : ")
+    # Password is stored in the OS keyring (Windows Credential Manager, macOS
+    # Keychain, Linux Secret Service) and only prompted for the first time.
+    account  = f"{SFTP_USER}@{SFTP_HOST}"
+    password = keyring.get_password(KEYRING_SERVICE, account)
+    if password is None:
+        password = getpass.getpass(f"SFTP password for {account}: ")
+        keyring.set_password(KEYRING_SERVICE, account, password)
 
-    # Connexion SFTP
+    # SFTP connection
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     ssh.connect(SFTP_HOST, port=SFTP_PORT, username=SFTP_USER, password=password)
     sftp = ssh.open_sftp()
-    print("Connecté au serveur SFTP.\n")
+    print("Connected to the SFTP server.\n")
 
     summary = defaultdict(list)
 
@@ -114,11 +122,11 @@ def main():
 
         print(f"── {mission.name}")
 
-        # Vérifier l'existence du dossier distant
+        # Check that the remote folder exists
         try:
             sftp.stat(remote_path)
         except FileNotFoundError:
-            print(f"   ✗ DOSSIER ABSENT sur le serveur ({remote_path})\n")
+            print(f"   ✗ FOLDER MISSING on the server ({remote_path})\n")
             summary["absent"].append(mission.name)
             continue
 
@@ -129,24 +137,24 @@ def main():
         has_issues = any(diff.values())
 
         if not has_issues:
-            print(f"   ✓ OK — {len(local_tree)} fichier(s), tailles identiques\n")
+            print(f"   ✓ OK — {len(local_tree)} file(s), identical sizes\n")
             summary["ok"].append(mission.name)
         else:
             summary["issues"].append(mission.name)
 
             if diff["missing"]:
-                print(f"   ✗ Fichiers manquants sur le serveur ({len(diff['missing'])}) :")
+                print(f"   ✗ Files missing on the server ({len(diff['missing'])}):")
                 for f in diff["missing"]:
                     print(f"      - {f}  ({format_size(local_tree[f])})")
 
             if diff["mismatch"]:
-                print(f"   ⚠ Tailles différentes ({len(diff['mismatch'])}) :")
+                print(f"   ⚠ Size mismatches ({len(diff['mismatch'])}):")
                 for f in diff["mismatch"]:
                     print(f"      - {f}  local={format_size(local_tree[f])}  "
-                          f"distant={format_size(remote_tree[f])}")
+                          f"remote={format_size(remote_tree[f])}")
 
             if diff["extra"]:
-                print(f"   ℹ Fichiers supplémentaires sur le serveur ({len(diff['extra'])}) :")
+                print(f"   ℹ Extra files on the server ({len(diff['extra'])}):")
                 for f in diff["extra"]:
                     print(f"      - {f}")
             print()
@@ -154,16 +162,16 @@ def main():
     sftp.close()
     ssh.close()
 
-    # Résumé final
+    # Final summary
     print("═" * 50)
-    print("RÉSUMÉ")
-    print(f"  ✓ OK         : {len(summary['ok'])}")
-    print(f"  ✗ Absent     : {len(summary['absent'])}")
-    print(f"  ⚠ Différences: {len(summary['issues'])}")
+    print("SUMMARY")
+    print(f"  ✓ OK          : {len(summary['ok'])}")
+    print(f"  ✗ Missing     : {len(summary['absent'])}")
+    print(f"  ⚠ Differences : {len(summary['issues'])}")
     if summary["absent"]:
-        print("\nDossiers absents :", ", ".join(summary["absent"]))
+        print("\nMissing folders:", ", ".join(summary["absent"]))
     if summary["issues"]:
-        print("Dossiers avec différences :", ", ".join(summary["issues"]))
+        print("Folders with differences:", ", ".join(summary["issues"]))
 
 
 if __name__ == "__main__":
