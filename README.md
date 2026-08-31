@@ -8,8 +8,11 @@ Standalone scripts, or tools, mostly using R, Python or Bash, that members of th
 
 ## Softwares or platforms
 
+* **3DFin**: related to [3D Forest INventory](https://github.com/3DFin/3DFin)
 * **DJI**: related to DJI products such as D-RTK 2 base station logs
-* **Metashape**: related to Agisoft Metashape
+* **Labelbox**: related to Labelbox, an online labeling platform
+* **Metashape**: related to Agisoft Metashape, a software used for photogrammetry
+* **lefoai**: scripts to be used on our Linux server
 
 ## How to find the scripts
 First go to the folder corresponding to the software or platform of interest. Every single tool, or standalone script, should be in a separate file with a short name that should allow you to find it. A README file should be available in each folder to explain the different files.

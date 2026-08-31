@@ -1,3 +1,7 @@
+*.config
+
+*.tiff
+*.tif
 # History files
 .Rhistory
 .Rapp.history
@@ -54,11 +58,15 @@ temp*/
 
 # Workspace files
 *.code-workspace
-/.vscode
+**/.vscode/
 
 # Virtual environment folders
 **/.venv/
 
 # Environment variables
 .env
+*.env
 .Renviron
+
+# Data folder not to be shared
+/Labelbox/2025_Manaus/data

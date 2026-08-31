@@ -1,0 +1,8 @@
+# Python dependencies for the workshop notebooks
+# Pre-install before opening Jupyter:
+#   python3 -m pip install -r requirements.txt
+
+requests
+rasterio
+numpy
+matplotlib

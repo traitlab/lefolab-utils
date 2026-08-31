@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<batchjobs version="2.2" save_project="true">
+  <job name="ClassifyGroundPoints" target="all"/>
+  <job name="BuildDem" target="all">
+    <classes>2;9</classes>
+    <reuse_depth>true</reuse_depth>
+  </job>
+  <job name="ExportDem" target="all">
+    <image_compression>
+      <tiff_big>true</tiff_big>
+      <tiff_tiled>true</tiff_tiled>
+      <tiff_overviews>true</tiff_overviews>
+      <tiff_compression>5</tiff_compression>
+      <jpeg_quality>90</jpeg_quality>
+    </image_compression>
+    <image_format>2</image_format>
+    <path>conrad/{chunklabel}/{chunklabel}_dtm.tif</path>
+    <save_alpha>false</save_alpha>
+    <source_data>4</source_data>
+  </job>
+</batchjobs>

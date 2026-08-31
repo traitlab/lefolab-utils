@@ -1,0 +1,39 @@
+{
+  "type": "FeatureCollection",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "EPSG:32617"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "id": 1,
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [626500, 1012000],
+            [627200, 1012000],
+            [627200, 1012700],
+            [626500, 1012700],
+            [626500, 1012000]
+          ]
+        ]
+      },
+      "properties": {
+        "OBJECTID": 1,
+        "Id": 0,
+        "AREA": 49.0,
+        "DESCRIP_EN": "50 Ha Plot (UTM)",
+        "DESCRIP_ES": "Parcela 50 Ha (UTM)",
+        "width_m": 700,
+        "height_m": 700,
+        "area_m2": 490000,
+        "area_ha": 49.0
+      }
+    }
+  ]
+}
+
