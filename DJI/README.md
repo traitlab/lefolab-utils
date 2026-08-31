@@ -14,11 +14,18 @@ Renames all `.DAT` files in a specified folder by extracting a date-time string 
 ---
 
 ## GPStime2UTCtime.py
-Converts GPS time (week and milliseconds) to UTC time, accounting for leap seconds. Process a folder containing `.DAT` files from RTK base, converts all timestamps, and saves the output to a text file named with the first valid UTC timestamp found in the data.
+Converts the GPS timestamps of a DJI RTK base log to UTC, accounting for leap seconds. Auto-detects which base station generation the folder holds:
+
+- **D-RTK 2** — text `.DAT` log with one `bestpos:<week>,<ms>ms,...` line per record (e.g. `RTK235.DAT`).
+- **D-RTK 3** — tab-separated `.MRK` log, `<index> <seconds of week> [<week>] ...` (e.g. `DRTK3_0100_20260818094346_XX.MRK`). Its `.dat` is binary RTCM for PPK and holds no readable timestamps, so it is skipped.
+
+A folder of raw RTCM `.DAT` files with no `bestpos:` lines is reported rather than silently producing nothing. Output is one `<YYYYMMDD_HHMMSS>_UTC_<file number>.txt` per input file, each source line kept as-is with ` [UTC: ...]` appended.
+
+Drone photo-event `.MRK` files share the same column layout as a D-RTK 3 base log, so pointing the script at a mission folder would otherwise convert photo timestamps without a word. It warns when a file looks like photo events — name ending in `_Timestamp.MRK`, or records carrying non-zero N/E/V antenna offsets — and converts anyway, since the timestamps are valid either way.
 
 **Usage:**
-- Run `python GPStime2UTCtime.py` and enter the path to your folder.
-- The script will output a processed text file with UTC times for each `.DAT` files in the folder.
+- Run `python GPStime2UTCtime.py` and enter the path to your folder, or pass it as an argument: `python GPStime2UTCtime.py "E:/path/to/logs"`.
+- Leap seconds are set by `LEAP_SECONDS = 18` at the top of the script (unchanged since 2017-01-01); update it if a new leap second is ever introduced.
 
 ---
 
