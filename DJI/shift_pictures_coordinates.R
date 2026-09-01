@@ -3,7 +3,7 @@ shift_pictures_coordinates <- function(input_folder,
                           new_base_position,  # Vector c(lat, lon, ellips height) of new base position  
                           input_crs = 4326,   # Input CRS, default to EPSG 4326 for WGS84
                           projected_crs,      # Projected CRS
-                          withzoom            # TRUE for wide+zoom pictures pair, FALSE for standalone pictures (mapping pictures for instance)
+                          withzoom            # TRUE for wide + close-up picture sets (legacy wide+zoom, M3E/M3T wide+tele, M4E wide+med+tele), FALSE for standalone pictures (mapping pictures for instance)
                           ) {
   
   require(exiftoolr) # need to install Strawberry Perl to use this package on Windows - https://strawberryperl.com/
@@ -39,9 +39,20 @@ shift_pictures_coordinates <- function(input_folder,
   # List all image files in the input folder
   image_files <- list.files(input_folder, pattern = "\\.(jpg|jpeg|JPG|JPEG)$", full.names = TRUE)
 
-  # Determine files to process
+  # Suffixes of the close-up pictures that follow a wide picture:
+  #   legacy naming: "<id>zoom"
+  #   current naming: "<id>tele" (M3E/M3T) or "<id>med" + "<id>tele" (M4E),
+  #   the wide picture being named "<id>wide"
+  closeup_suffixes <- c("zoom", "med", "tele")
+  closeup_pattern <- paste0("_(\\d+)(", paste(closeup_suffixes, collapse = "|"), ")\\.(jpg|jpeg)$")
+
+  # A folder shot with a "med" camera (M4E) is expected to hold both a "med" and a "tele"
+  # picture per wide picture; on M3E/M3T a lone "tele" picture is the normal case
+  folder_has_med <- any(grepl("_(\\d+)med\\.(jpg|jpeg)$", basename(image_files), ignore.case = TRUE))
+
+  # Determine files to process (the wide pictures carry the GPS position to shift)
   wide_files <- if (withzoom) {
-    image_files[!grepl("zoom", basename(image_files), ignore.case = TRUE)]
+    image_files[!grepl(closeup_pattern, basename(image_files), ignore.case = TRUE)]
   } else {
     image_files
   }
@@ -115,20 +126,30 @@ shift_pictures_coordinates <- function(input_folder,
     pair_files <- wide_file  # Default to single file
 
     if (withzoom) {
-      # Extract the polygon id from image file
-      polygon_id <- gsub(".*_(\\d+)\\..*", "\\1", basename(wide_file))
+      # Extract the polygon id from image file (the wide picture has no suffix in the
+      # legacy naming, and a "wide" suffix in the current naming)
+      polygon_id <- gsub(".*_(\\d+)(wide)?\\..*", "\\1", basename(wide_file), ignore.case = TRUE)
 
-      # Construct the pattern to match the corresponding "zoom" file
-      identifier_match <- paste0("_", polygon_id, "zoom.JPG$")
+      # Construct the pattern to match the corresponding close-up file(s): "zoom" (legacy) or "med"/"tele" (current)
+      identifier_match <- paste0("_", polygon_id, "(", paste(closeup_suffixes, collapse = "|"), ")\\.(jpg|jpeg)$")
 
-      # Search for the "zoom" file in the same folder
+      # Search for the close-up file(s) in the same folder
       zoom_file <- list.files(dirname(wide_file), pattern = identifier_match, full.names = TRUE, ignore.case = TRUE)
 
-      # Check if the "zoom" file exists
+      # Check if at least one close-up file exists
       if (length(zoom_file) == 0) {
-        warning(paste("Skipping", basename(wide_file), "- no corresponding zoom file found."))
+        warning(paste("Skipping", basename(wide_file), "- no corresponding zoom/med/tele file found."))
         error_count <- error_count + 1
         next
+      }
+
+      # Warn on incomplete M4E sets, where both a "med" and a "tele" picture are expected
+      set_has_med  <- any(grepl("med\\.(jpg|jpeg)$", basename(zoom_file), ignore.case = TRUE))
+      set_has_tele <- any(grepl("tele\\.(jpg|jpeg)$", basename(zoom_file), ignore.case = TRUE))
+      if (set_has_med && !set_has_tele) {
+        warning(paste("Incomplete set for", basename(wide_file), "- 'med' picture found but no corresponding 'tele' picture."))
+      } else if (folder_has_med && set_has_tele && !set_has_med) {
+        warning(paste("Incomplete set for", basename(wide_file), "- 'tele' picture found but no corresponding 'med' picture."))
       }
 
       pair_files <- c(wide_file, zoom_file)

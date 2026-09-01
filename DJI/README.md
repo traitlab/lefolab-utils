@@ -13,23 +13,46 @@ Renames all `.DAT` files in a specified folder by extracting a date-time string 
 
 ---
 
-## GPStime2UTCtime.py
-Converts GPS time (week and milliseconds) to UTC time, accounting for leap seconds. Process a folder containing `.DAT` files from RTK base, converts all timestamps, and saves the output to a text file named with the first valid UTC timestamp found in the data.
+## convert_base_log_to_utc.py
+Converts the GPS timestamps of a DJI RTK base log to UTC, accounting for leap seconds. Auto-detects which base station generation the folder holds:
+
+- **D-RTK 2** — text `.DAT` log with one `bestpos:<week>,<ms>ms,...` line per record (e.g. `RTK235.DAT`).
+- **D-RTK 3** — tab-separated `.MRK` log, `<index> <seconds of week> [<week>] ...` (e.g. `DRTK3_0100_20260818094346_XX.MRK`). Its `.dat` is binary RTCM for PPK and holds no readable timestamps, so it is skipped.
+
+A folder of raw RTCM `.DAT` files with no `bestpos:` lines is reported rather than silently producing nothing. Output is one `<YYYYMMDD_HHMMSS>_UTC_<file number>.txt` per input file, each source line kept as-is with ` [UTC: ...]` appended.
+
+Drone photo-event `.MRK` files share the same column layout as a D-RTK 3 base log, so pointing the script at a mission folder would otherwise convert photo timestamps without a word. It warns when a file looks like photo events — name ending in `_Timestamp.MRK`, or records carrying non-zero N/E/V antenna offsets — and converts anyway, since the timestamps are valid either way.
 
 **Usage:**
-- Run `python GPStime2UTCtime.py` and enter the path to your folder.
-- The script will output a processed text file with UTC times for each `.DAT` files in the folder.
+- Run `python convert_base_log_to_utc.py` and enter the path to your folder, or pass it as an argument: `python convert_base_log_to_utc.py "E:/path/to/logs"`.
+- Leap seconds are set by `LEAP_SECONDS = 18` at the top of the script (unchanged since 2017-01-01); update it if a new leap second is ever introduced.
 
 ---
 
 ## merge_obs_files.R
-Merges multiple RINEX observations files (versions 2.10 and 3.03) into a single file. Updates the header to reflect the correct "TIME OF LAST OBS" and concatenates the data, skipping redundant headers from subsequent files.
+Merges multiple RINEX observation files into a single file. Auto-detects the naming convention in use:
+
+- `.<yy>O` (e.g. `.25O`) — D-RTK 2 and most receivers, RINEX 2.10 / 3.03. The year comes from the extension.
+- `.OBS` — D-RTK 3, RINEX 3.05. The extension carries no year, so the date is read from the `YYYYMMDDhhmmss` block in the file name (e.g. `DRTK3_0101_20260818094419_8PHXP1600A01GG.OBS`).
+
+Files are merged in chronological order under the header of the first file. `TIME OF FIRST OBS` and `TIME OF LAST OBS` are computed from the actual first and last epochs and inserted into the header when the receiver omitted them (the D-RTK 3 does). Each file's time span, epoch count and the gap to the previous file are printed, with warnings on overlapping epochs, unexpectedly long gaps, and observation types that differ between files.
 
 **Usage:**
-- Set `folder_path` to the directory containing your observations files.
+- Set `folder_path` to the directory containing your observation files (searched recursively).
 - Set `year` to the relevant year.
 - Optionally set `survey_marker` for the output filename.
-- Run the script in R to generate a merged observations file.
+- Run the script in R to generate a merged observations file, named `<survey_marker>.<yy>O` — the extension most PPK software expects.
+
+Advanced settings at the top of the script. The defaults suit every normal survey — only change one when something specific forces your hand:
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `rinex_ext` | `NULL` (auto-detect) | Force a convention, `"OBS"` or e.g. `"25O"`. Required when both types sit in the same tree. |
+| `output_ext` | `NULL` (`<yy>O`) | Override the output extension. |
+| `filter_by_year` | `TRUE` | Keep only the `.OBS` files whose file name stamp matches `year`. |
+| `write_time_of_obs` | `TRUE` | Set to `FALSE` to leave the header exactly as the receiver wrote it. |
+| `time_system` | `"GPS"` | Time system written in the two `TIME OF ... OBS` lines. |
+| `gap_warning_secs` | `600` | Gap above which consecutive files raise a warning. |
 
 ---
 
