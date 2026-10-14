@@ -101,12 +101,7 @@ shift_pictures_coordinates <- function(input_folder,
   shifted_wgs84 <- st_coordinates(st_transform(shifted_sfc, crs = input_crs))
 
   height_shift <- new_base_position["height"] - old_base_position["height"]
-  abs_alt_is_char <- is.character(all_exif$AbsoluteAltitude)
-  abs_alt_numeric <- if (abs_alt_is_char) {
-    as.numeric(gsub("\\+", "", all_exif$AbsoluteAltitude))
-  } else {
-    all_exif$AbsoluteAltitude
-  }
+  abs_alt_numeric <- as.numeric(gsub("\\+", "", all_exif$AbsoluteAltitude))
 
   # Initialize progress bar
   sink(NULL)
@@ -172,7 +167,8 @@ shift_pictures_coordinates <- function(input_folder,
     gps_altitude      <- all_exif$GPSAltitude[i]
     shifted_gps_alt   <- gps_altitude + height_shift
     shifted_abs_alt   <- abs_alt_numeric[i] + height_shift
-    if (abs_alt_is_char) shifted_abs_alt <- sprintf("+%.3f", shifted_abs_alt)
+    shifted_abs_alt   <- sprintf("%+.3f", shifted_abs_alt)
+    shifted_gps_alt_ref <- if (shifted_gps_alt < 0) 1 else 0
 
     # Copy files to output folder
     output_files <- file.path(output_folder, basename(pair_files))
@@ -185,7 +181,8 @@ shift_pictures_coordinates <- function(input_folder,
           "-overwrite_original",
           paste0("-GPSLongitude=", shifted_wgs84[i, "X"]),
           paste0("-GPSLatitude=",  shifted_wgs84[i, "Y"]),
-          paste0("-GPSAltitude=",  shifted_gps_alt),
+          paste0("-GPSAltitude=",  abs(shifted_gps_alt)),
+          paste0("-GPSAltitudeRef#=", shifted_gps_alt_ref),
           paste0("-AbsoluteAltitude=", shifted_abs_alt)
         ),
         path = output_files
