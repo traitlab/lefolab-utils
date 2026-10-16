@@ -56,7 +56,35 @@ Advanced settings at the top of the script. The defaults suit every normal surve
 
 ---
 
+## shift_pictures_coordinates.py
+Shifts the geotagged coordinates of pictures by the difference between an old and a new base station position (e.g. RTK base set up on an approximate position, corrected after PPK). The XY difference is computed in a projected CRS and the ellipsoidal height difference is added to the altitude. With `--closeup`, each wide picture defines a set with its close-up pictures (legacy `zoom`, M3E/M3T `tele`, M4E `med` + `tele`), and the shifted position of the wide picture is written to all the pictures of the set. With `--no-closeup`, every picture is shifted from its own position (e.g. mapping pictures).
+
+Only the GPS values are changed (EXIF `GPSLatitude`, `GPSLongitude`, `GPSAltitude` and XMP `drone-dji:GpsLatitude`, `GpsLongitude`, `AbsoluteAltitude`). They are written in place in the format DJI uses, so the rest of the file stays byte-identical and the pictures can still be read by tools that parse DJI's metadata, such as [closeup-ortho](https://github.com/traitlab/closeup-ortho). The log file `<folder>_PPKshift.txt` records the exact original values of every picture, so the shift can be reversed to byte-identical original pictures.
+
+**Usage:**
+- Shift the pictures of one or more folders. Each folder's shifted pictures and its log are written to `<folder>/afterppk/`:
+  ```bash
+  python shift_pictures_coordinates.py shift \
+      --old-base 45.589184009 -75.241806593 4.088 \
+      --new-base 45.58919069 -75.24180156 44.0035 \
+      --projected-crs 32618 --closeup \
+      /path/to/mission/flight_folder1 /path/to/mission/flight_folder2
+  ```
+  - `--old-base`, `--new-base`: latitude, longitude and ellipsoidal height of the old and new base positions.
+  - `--input-crs` (default `4326`), `--projected-crs`: coordinate reference systems.
+  - `--closeup` for wide + close-up picture sets, `--no-closeup` for standalone pictures. One of them is required.
+- Replace the pictures of each folder by the shifted ones in `afterppk/` (**deletes the original pictures** of the folder):
+  `python shift_pictures_coordinates.py cleanup /path/to/mission`
+- Restore the original pictures into `<folder>/beforeppk/`, from the folder holding the shifted pictures and their `*_PPKshift.txt` (the flight folder after cleanup, or its `afterppk/` folder before cleanup):
+  `python shift_pictures_coordinates.py reverse /path/to/mission/flight_folder`
+- Shell globs work. `shift` and `reverse` only read the pictures directly in each folder, so the glob has to reach the flight folders (e.g. `.../2026/*_wpt_m4e/*/`). `cleanup` searches subfolders, so mission folders are enough.
+- Requires Python package: `pyproj`. ExifTool is not needed.
+
+---
+
 ## shift_pictures_coordinates.R
+**Outdated: use `shift_pictures_coordinates.py` instead.** This script rewrites the whole XMP packet through ExifTool, which changes DJI's metadata format (closeup-ortho can no longer read the position of the shifted pictures). The close-up pictures also lose their own original position, and the log does not keep enough information to restore the original pictures.
+
 Shifts the geotagged coordinates of pictures based on a new base station position. Uses EXIF metadata and spatial libraries to update picture locations, supporting both wide+zoom pairs and mapping pictures. Outputs the results and a log file to a new folder inside the input directory.
 
 **Usage:**
@@ -79,6 +107,13 @@ Cleans timestamp files before PPK processing by removing photos without valid GP
 - Review the summary of actions (lines to remove and images to delete).
 - Confirm to proceed. Backups of timestamp files are created automatically.
 - Processes all subfolders in batch with a single confirmation.
+
+## rename_wpt_ppk_files.py
+Renames the PPK files (`.MRK`, `.NAV`, `.OBS`, `.RTK`) of DJI M4E waypoint missions to the name of their parent folder. The RTK filename referenced in `ppk_file_name.pbk` is updated accordingly.
+
+**Usage:**
+- Run `python rename_wpt_ppk_files.py <path> [<path> ...]` (or without argument to be prompted), where each `<path>` is a mission directory containing flight folders, or a single flight folder. Shell globs work too (e.g. `.../2026/*_wpt_m4e`).
+- Review the planned renames and confirm to proceed.
 
 ---
 

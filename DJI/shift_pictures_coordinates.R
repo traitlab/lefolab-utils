@@ -179,6 +179,7 @@ shift_pictures_coordinates <- function(input_folder,
       exif_call(
         args = c(
           "-overwrite_original",
+          "-m",  # ignore minor warnings (e.g. "Possibly incorrect maker notes offsets" on DJI M4E pictures)
           paste0("-GPSLongitude=", shifted_wgs84[i, "X"]),
           paste0("-GPSLatitude=",  shifted_wgs84[i, "Y"]),
           paste0("-GPSAltitude=",  abs(shifted_gps_alt)),
