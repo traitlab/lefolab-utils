@@ -22,8 +22,8 @@ base positions are applied, exactly as in the R script.
 Usage:
   # Shift (pictures written to <folder>/afterppk/, with <folder>_PPKshift.txt)
   python shift_pictures_coordinates.py shift \\
-      --old-base 45.589184009 -75.241806593 4.088 \\
-      --new-base 45.58919069 -75.24180156 44.0035 \\
+      --old-base 0.00000000 0.00000000 0.000 \\
+      --new-base 0.00000000 0.00000000 0.000 \\
       --projected-crs 32618 --closeup \\
       /path/to/mission_folder1 /path/to/mission_folder2
 
@@ -340,6 +340,17 @@ def list_pictures(folder):
                   if re.search(r"\.(jpg|jpeg)$", f, re.IGNORECASE) and os.path.isfile(f))
 
 
+def find_folders(folder, has_content, skip):
+    """Return the folder and its subfolders for which has_content(folder) is true, without
+    descending into the subfolders named in skip (e.g. the afterppk/beforeppk outputs)."""
+    found = []
+    for root, dirs, _ in os.walk(folder):
+        dirs[:] = sorted(d for d in dirs if d not in skip)
+        if has_content(root):
+            found.append(root)
+    return found
+
+
 def shift_pictures_coordinates(input_folder,
                                old_base_position,  # dict(lat=, lon=, height=) of old base position (ellipsoidal height)
                                new_base_position,  # dict(lat=, lon=, height=) of new base position (ellipsoidal height)
@@ -571,6 +582,8 @@ def main():
 
     p = sub.add_parser("shift", help="shift the pictures of each folder into <folder>/afterppk/")
     p.add_argument("folders", nargs="+", help="folders containing the pictures")
+    p.add_argument("--recursive", action=argparse.BooleanOptionalAction, default=True,
+                   help="also shift the pictures of every subfolder, each into its own afterppk/ (default: on)")
     p.add_argument("--old-base", nargs=3, type=float, required=True, metavar=("LAT", "LON", "HEIGHT"),
                    help="old base position (ellipsoidal height)")
     p.add_argument("--new-base", nargs=3, type=float, required=True, metavar=("LAT", "LON", "HEIGHT"),
@@ -583,13 +596,26 @@ def main():
     p = sub.add_parser("reverse", help="restore the original pictures into <folder>/beforeppk/")
     p.add_argument("folders", nargs="+", help="folders containing the shifted pictures and their *_PPKshift.txt")
     p.add_argument("--log", help="log file (default: the *_PPKshift.txt of each folder)")
+    p.add_argument("--recursive", action=argparse.BooleanOptionalAction, default=True,
+                   help="also reverse every subfolder holding a *_PPKshift.txt (default: on, off with --log)")
 
     p = sub.add_parser("cleanup", help="replace the pictures of each folder by those of its afterppk/ subfolders")
     p.add_argument("folders", nargs="+")
 
     args = parser.parse_args()
-    failed = False
+
+    folders = []
     for folder in args.folders:
+        if args.command == "cleanup" or not args.recursive or (args.command == "reverse" and args.log):
+            folders.append(folder)
+        elif args.command == "shift":
+            folders += find_folders(folder, list_pictures, skip=("afterppk", "beforeppk")) or [folder]
+        else:
+            folders += find_folders(folder, lambda f: glob.glob(os.path.join(f, "*_PPKshift.txt")),
+                                    skip=("beforeppk",)) or [folder]
+
+    failed = False
+    for folder in folders:
         try:
             if args.command == "shift":
                 print(shift_pictures_coordinates(
