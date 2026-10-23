@@ -5,6 +5,8 @@ missions to the name of their parent folder.
 
 The RTK filename referenced in ppk_file_name.pbk is updated accordingly.
 
+Every folder containing PPK files is processed, at any depth below the given directories.
+
 Usage: python rename_wpt_ppk_files.py <mission_directory or flight_folder> [...]
 """
 
@@ -14,6 +16,22 @@ import sys
 
 EXTENSIONS = ['.MRK', '.NAV', '.OBS', '.RTK']
 PBK_FILE = 'ppk_file_name.pbk'
+
+
+def has_ppk_files(folder_path):
+    """Return True if the folder directly contains at least one PPK file."""
+    return any(os.path.splitext(f)[1].upper() in EXTENSIONS and os.path.isfile(os.path.join(folder_path, f))
+               for f in os.listdir(folder_path))
+
+
+def find_folders(folder):
+    """Return the folder and its subfolders (recursively) that contain PPK files."""
+    found = []
+    for root, dirs, _ in os.walk(folder):
+        dirs.sort()
+        if has_ppk_files(root):
+            found.append(root)
+    return found
 
 
 def process_folder(folder_path):
@@ -92,11 +110,10 @@ def main():
         if not os.path.isdir(base_folder):
             raise NotADirectoryError(f"{base_folder} is not a valid directory")
 
-    # Accept either mission directories (with flight subfolders) or single flight folders
+    # Accept mission directories (searched recursively for flight folders) or single flight folders
     subfolders = []
     for base_folder in base_folders:
-        flight_folders = sorted(f.path for f in os.scandir(base_folder) if f.is_dir())
-        subfolders.extend(flight_folders or [base_folder])
+        subfolders.extend(find_folders(base_folder) or [base_folder])
 
     print(f"Found {len(subfolders)} folders to process")
     print("=" * 60)
